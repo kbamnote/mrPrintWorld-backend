@@ -2,7 +2,6 @@ import { Router } from 'express'
 import { z } from 'zod'
 import rateLimit from 'express-rate-limit'
 import { User } from '../../models/User.js'
-import { env } from '../../config/env.js'
 import { validate } from '../../middleware/validate.js'
 import { asyncHandler, ApiError } from '../../utils/ApiError.js'
 import {
@@ -10,6 +9,9 @@ import {
   signRefreshToken,
   verifyRefreshToken,
   requireAdmin,
+  setRefreshCookie,
+  clearRefreshCookie,
+  REFRESH_COOKIES,
 } from '../../middleware/auth.js'
 
 export const adminAuthRouter = Router()
@@ -23,18 +25,6 @@ const loginLimiter = rateLimit({
   skipSuccessfulRequests: true,
   message: { ok: false, error: { message: 'Too many sign-in attempts. Try again in 15 minutes.' } },
 })
-
-const REFRESH_COOKIE = 'mrpw_refresh'
-
-function setRefreshCookie(res, token) {
-  res.cookie(REFRESH_COOKIE, token, {
-    httpOnly: true, // unreachable from JavaScript, so XSS cannot steal it
-    secure: env.isProd,
-    sameSite: env.isProd ? 'none' : 'lax', // 'none' — admin is on a different origin to the API
-    path: '/api/admin/auth',
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-  })
-}
 
 adminAuthRouter.post(
   '/login',
@@ -62,7 +52,7 @@ adminAuthRouter.post(
     user.lastLoginAt = new Date()
     await user.save()
 
-    setRefreshCookie(res, signRefreshToken(user))
+    setRefreshCookie(res, 'admin', signRefreshToken(user))
     res.json({
       ok: true,
       data: {
@@ -76,7 +66,7 @@ adminAuthRouter.post(
 adminAuthRouter.post(
   '/refresh',
   asyncHandler(async (req, res) => {
-    const token = req.cookies?.[REFRESH_COOKIE]
+    const token = req.cookies?.[REFRESH_COOKIES.admin.name]
     if (!token) throw ApiError.unauthorized('No refresh token')
 
     let payload
@@ -95,7 +85,7 @@ adminAuthRouter.post(
       throw ApiError.unauthorized('Session revoked — please sign in again')
     }
 
-    setRefreshCookie(res, signRefreshToken(user)) // rotate on every use
+    setRefreshCookie(res, 'admin', signRefreshToken(user)) // rotate on every use
     res.json({
       ok: true,
       data: {
@@ -107,7 +97,7 @@ adminAuthRouter.post(
 )
 
 adminAuthRouter.post('/logout', (req, res) => {
-  res.clearCookie(REFRESH_COOKIE, { path: '/api/admin/auth' })
+  clearRefreshCookie(res, 'admin')
   res.json({ ok: true, data: { message: 'Signed out' } })
 })
 

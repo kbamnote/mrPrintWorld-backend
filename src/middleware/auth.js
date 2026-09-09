@@ -29,6 +29,37 @@ export function verifyRefreshToken(token) {
 }
 
 /**
+ * Refresh cookies for the two surfaces.
+ *
+ * Separate names AND separate paths, so a customer session and an admin
+ * session can coexist in one browser without overwriting each other, and the
+ * customer cookie is never even transmitted to /api/admin/*.
+ */
+export const REFRESH_COOKIES = {
+  admin: { name: 'mrpw_refresh', path: '/api/admin/auth' },
+  customer: { name: 'mrpw_c_refresh', path: '/api/auth' },
+}
+
+export function setRefreshCookie(res, surface, token) {
+  const { name, path } = REFRESH_COOKIES[surface]
+  res.cookie(name, token, {
+    httpOnly: true, // unreachable from JavaScript, so XSS cannot steal it
+    secure: env.isProd,
+    // The site and the API are on different subdomains, so the cookie is
+    // cross-site and needs SameSite=None — which browsers only accept with
+    // Secure. That pairing is why NODE_ENV must be production in deployment.
+    sameSite: env.isProd ? 'none' : 'lax',
+    path,
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  })
+}
+
+export function clearRefreshCookie(res, surface) {
+  const { name, path } = REFRESH_COOKIES[surface]
+  res.clearCookie(name, { path })
+}
+
+/**
  * Attaches req.user when a valid bearer token is present.
  * Never rejects — anonymous access is legitimate on public routes, and those
  * callers simply resolve to the default customer tier.
