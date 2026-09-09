@@ -14,7 +14,8 @@
     "seed:admin": "node scripts/createAdmin.js",
     "seed:catalogue": "node scripts/seedCatalogue.js",
     "verify:parity": "node scripts/verifyParity.js",
-    "lint": "eslint src scripts"
+    "lint": "eslint src scripts",
+    "seed:new": "node scripts/seedNewProducts.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
