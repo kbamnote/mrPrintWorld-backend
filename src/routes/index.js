@@ -6,6 +6,7 @@ import { publicProductsRouter } from './public/products.js'
 import { publicPricingRouter } from './public/pricing.js'
 import { publicTiersRouter } from './public/tiers.js'
 import { customerAuthRouter } from './auth.js'
+import { ordersRouter } from './orders.js'
 
 import { adminAuthRouter } from './admin/auth.js'
 import { adminCategoriesRouter } from './admin/categories.js'
@@ -15,6 +16,7 @@ import { adminUploadsRouter } from './admin/uploads.js'
 import { adminCustomersRouter } from './admin/customers.js'
 import { adminOrganizationsRouter } from './admin/organizations.js'
 import { adminPriceOverridesRouter } from './admin/priceOverrides.js'
+import { adminOrdersRouter } from './admin/orders.js'
 
 export const apiRouter = Router()
 
@@ -26,6 +28,9 @@ apiRouter.use('/public/tiers', publicTiersRouter)
 
 /* ── Customer auth — separate surface, separate refresh cookie ─────────── */
 apiRouter.use('/auth', customerAuthRouter)
+
+/* ── Cart, checkout and order history ──────────────────────────────────── */
+apiRouter.use('/', ordersRouter)
 
 /* ── Admin surface ───────────────────────────────────────────────────────
    Auth is mounted BEFORE the guard (login must be reachable). Everything
@@ -41,3 +46,4 @@ apiRouter.use('/admin/uploads', adminUploadsRouter)
 apiRouter.use('/admin/customers', adminCustomersRouter)
 apiRouter.use('/admin/organizations', adminOrganizationsRouter)
 apiRouter.use('/admin/price-overrides', adminPriceOverridesRouter)
+apiRouter.use('/admin/orders', adminOrdersRouter)

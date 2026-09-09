@@ -35,6 +35,13 @@ const schema = z.object({
   CLOUDINARY_API_KEY: z.string().optional(),
   CLOUDINARY_API_SECRET: z.string().optional(),
   CLOUDINARY_FOLDER: z.string().default('mrprintworld/products'),
+
+  // Payments — optional at boot so the API runs before Razorpay is set up.
+  // Checkout returns a clear 503 until these exist, rather than throwing
+  // somewhere inside the SDK.
+  RAZORPAY_KEY_ID: z.string().optional(),
+  RAZORPAY_KEY_SECRET: z.string().optional(),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
 })
 
 const parsed = schema.safeParse(process.env)

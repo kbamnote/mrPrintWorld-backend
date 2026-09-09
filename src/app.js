@@ -9,6 +9,7 @@ import mongoose from 'mongoose'
 
 import { env } from './config/env.js'
 import { apiRouter } from './routes/index.js'
+import { webhooksRouter } from './routes/webhooks.js'
 import { attachUser } from './middleware/auth.js'
 import { notFound, errorHandler } from './middleware/error.js'
 
@@ -24,6 +25,13 @@ export function createApp() {
   app.use(helmet())
   app.use(compression())
   app.use(cookieParser())
+
+  /* Webhooks mount BEFORE express.json().
+     The Razorpay signature is an HMAC over the EXACT bytes sent; letting the
+     JSON parser run first re-serialises the body and every check would fail.
+     This router uses express.raw() internally. */
+  app.use('/api/webhooks', webhooksRouter)
+
   app.use(express.json({ limit: '1mb' }))
   app.use(express.urlencoded({ extended: true, limit: '1mb' }))
 
