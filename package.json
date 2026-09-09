@@ -15,7 +15,8 @@
     "seed:catalogue": "node scripts/seedCatalogue.js",
     "verify:parity": "node scripts/verifyParity.js",
     "lint": "eslint src scripts",
-    "seed:new": "node scripts/seedNewProducts.js"
+    "seed:new": "node scripts/seedNewProducts.js",
+    "seed:prices": "node scripts/seedDummyPrices.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
