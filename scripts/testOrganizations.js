@@ -184,11 +184,12 @@ await test('Reliance gets its own rate of 162, still one master product', async 
   assert.equal(count, 1, 'still exactly ONE product record')
 })
 
-await test('an anonymous visitor is untouched by any contract', async () => {
-  const r = await quote(null)
-  assert.equal(r.tier, 'B2C')
-  assert.equal(r.total, 2200)
-  assert.equal(r.negotiated, false)
+await test('an anonymous visitor cannot see pricing, contracted or otherwise', async () => {
+  // Pricing is gated behind sign-in, so no contract can leak to the public.
+  const res = await call('POST', '/api/public/pricing/calculate', {
+    slug: acp.slug, width: 2, height: 5,
+  })
+  assert.equal(res.status, 401)
 })
 
 await test('a category-wide override covers products added later', async () => {

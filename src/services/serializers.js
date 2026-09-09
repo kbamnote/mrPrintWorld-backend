@@ -41,7 +41,7 @@ function primaryImage(product) {
 }
 
 /** Listing card — deliberately lean. */
-export function publicProductCard(product, { tierCode, tierIsPublic }) {
+export function publicProductCard(product, { tierCode, showPrice }) {
   return {
     id: String(product._id),
     name: product.name,
@@ -53,14 +53,16 @@ export function publicProductCard(product, { tierCode, tierIsPublic }) {
     categories: (product.categories ?? []).map((c) =>
       typeof c === 'object' && c.slug ? { id: String(c._id), name: c.name, slug: c.slug } : String(c),
     ),
-    // Price is omitted entirely when the tier is not public — the key is absent
-    // rather than null, so nothing about trade pricing is inferable.
-    ...(tierIsPublic ? { price: resolveDisplayPrice({ product, tierCode }) } : {}),
+    // Omitted ENTIRELY for anonymous callers — the key is absent rather than
+    // null, so no pricing is inferable from the response shape.
+    ...(showPrice ? { price: resolveDisplayPrice({ product, tierCode }) } : {}),
+    // Tells the storefront to render "View price" rather than a figure.
+    requiresSignIn: !showPrice,
   }
 }
 
 /** Detail page — everything a product page renders, and nothing more. */
-export function publicProductDetail(product, { tierCode, tierIsPublic, optionGroups = [] }) {
+export function publicProductDetail(product, { tierCode, showPrice, optionGroups = [] }) {
   return {
     id: String(product._id),
     name: product.name,
@@ -95,7 +97,8 @@ export function publicProductDetail(product, { tierCode, tierIsPublic, optionGro
     purchaseMode: product.purchaseMode,
     // The calculator needs the option SHAPE, never the tier rate table.
     options: optionGroups,
-    ...(tierIsPublic ? { price: resolveDisplayPrice({ product, tierCode }) } : {}),
+    ...(showPrice ? { price: resolveDisplayPrice({ product, tierCode }) } : {}),
+    requiresSignIn: !showPrice,
 
     seo: {
       title: product.seo?.title ?? product.name,

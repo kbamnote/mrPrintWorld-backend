@@ -54,6 +54,10 @@ publicPricingRouter.post(
   pricingLimiter,
   validate({ body: calcBody }),
   asyncHandler(async (req, res) => {
+    // Prices are for signed-in customers only, so the calculator is gated too.
+    // Without this the figure would still be one anonymous API call away.
+    if (!req.user) throw ApiError.unauthorized('Sign in to see pricing')
+
     const { slug, quantity, width, height, selections } = req.validatedBody
 
     // The product must be one this caller may see at all, including any

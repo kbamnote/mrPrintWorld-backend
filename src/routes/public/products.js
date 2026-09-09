@@ -3,7 +3,6 @@ import { z } from 'zod'
 import { Product } from '../../models/Product.js'
 import { Category } from '../../models/Category.js'
 import { OptionGroup } from '../../models/OptionGroup.js'
-import { CustomerTier } from '../../models/CustomerTier.js'
 import { validate } from '../../middleware/validate.js'
 import { asyncHandler, ApiError } from '../../utils/ApiError.js'
 import { resolveTierCode } from '../../services/pricing/resolvePrice.js'
@@ -12,10 +11,20 @@ import { publicProductCard, publicProductDetail, publicOptionGroup } from '../..
 
 export const publicProductsRouter = Router()
 
+/**
+ * Prices are visible to SIGNED-IN customers only.
+ *
+ * Anonymous visitors — and Google — get the full product page with no price;
+ * the storefront shows a "View price" prompt instead. This is a deliberate
+ * commercial choice: it costs price rich-results in search, and it is what
+ * the client asked for.
+ *
+ * The gate is authentication, not tier: a signed-in retail customer sees
+ * retail pricing, an approved trade customer sees theirs.
+ */
 async function tierContext(req) {
   const tierCode = await resolveTierCode(req.user)
-  const tier = await CustomerTier.findOne({ code: tierCode }).lean()
-  return { tierCode, tierIsPublic: tier?.isPublic !== false }
+  return { tierCode, showPrice: Boolean(req.user) }
 }
 
 const listQuery = z
@@ -33,7 +42,7 @@ publicProductsRouter.get(
   validate({ query: listQuery }),
   asyncHandler(async (req, res) => {
     const { category, featured, search, page, limit } = req.validatedQuery
-    const { tierCode, tierIsPublic } = await tierContext(req)
+    const { tierCode, showPrice } = await tierContext(req)
 
     // Query filter, never a response filter — includes per-organization
     // product access, so a restricted corporate account never even loads a
@@ -71,7 +80,7 @@ publicProductsRouter.get(
 
     res.json({
       ok: true,
-      data: items.map((p) => publicProductCard(p, { tierCode, tierIsPublic })),
+      data: items.map((p) => publicProductCard(p, { tierCode, showPrice })),
       meta: { page, limit, total, pages: Math.ceil(total / limit) },
     })
   }),
@@ -100,7 +109,7 @@ publicProductsRouter.get(
   '/:slug',
   validate({ params: z.object({ slug: z.string().trim().min(1).max(160) }).strict() }),
   asyncHandler(async (req, res) => {
-    const { tierCode, tierIsPublic } = await tierContext(req)
+    const { tierCode, showPrice } = await tierContext(req)
 
     const product = await Product.findOne({
       slug: req.validatedParams.slug,
@@ -129,7 +138,7 @@ publicProductsRouter.get(
 
     res.json({
       ok: true,
-      data: publicProductDetail(product, { tierCode, tierIsPublic, optionGroups }),
+      data: publicProductDetail(product, { tierCode, showPrice, optionGroups }),
     })
   }),
 )

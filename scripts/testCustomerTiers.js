@@ -76,10 +76,13 @@ const quote = async (token) => {
 let b2bToken
 let b2bUserId
 
-await test('anonymous visitor is priced at B2C', async () => {
-  const r = await quote(null)
-  assert.equal(r.tier, 'B2C')
-  assert.equal(r.total, 2000) // 10 sqft x 200
+await test('anonymous visitor cannot see pricing at all', async () => {
+  // Pricing is gated behind sign-in by product decision — an anonymous
+  // caller gets 401, not a figure.
+  const res = await call('POST', '/api/public/pricing/calculate', {
+    slug: product.slug, width: 2, height: 5,
+  })
+  assert.equal(res.status, 401)
 })
 
 await test('registering as B2B does NOT grant B2B pricing', async () => {
