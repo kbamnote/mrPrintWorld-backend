@@ -51,8 +51,13 @@ const productBody = z
             alt: z.string().max(200).optional(),
             isPrimary: z.boolean().optional(),
             order: z.number().int().optional(),
+            // Accepted and discarded. Documents saved before images got
+            // `_id: false` still carry one, and a round-trip edit must not
+            // fail because of a field the server itself put there.
+            _id: z.any().optional(),
           })
-          .strict(),
+          .strict()
+          .transform(({ _id, ...img }) => img),
       )
       .max(12)
       .optional(),

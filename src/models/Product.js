@@ -76,6 +76,11 @@ const productSchema = new mongoose.Schema(
         alt: { type: String, trim: true },
         isPrimary: { type: Boolean, default: false },
         order: { type: Number, default: 0 },
+        // No _id on image subdocuments. Mongoose adds one by default, the
+        // admin form loads it, sends it back on save, and the strict write
+        // schema then rejects it as an unrecognised key — which made saving a
+        // product after uploading an image impossible.
+        _id: false,
       },
     ],
 
