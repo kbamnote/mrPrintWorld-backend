@@ -155,10 +155,21 @@ adminProductsRouter.get(
     const { search, category, isActive, needsImage, needsPrice, page, limit } = req.validatedQuery
     const filter = {}
     if (search) filter.name = { $regex: search, $options: 'i' }
-    if (category) filter.categories = category
+    // Match the category itself OR anything beneath it, so selecting a root
+    // ("All Signage") returns every outdoor, indoor, retail and custom
+    // product. Products are filed against leaves, never roots.
+    if (category) filter.$or = [{ categories: category }, { categoryAncestors: category }]
     if (isActive) filter.isActive = isActive === 'true'
     // Work queues for the team: what still needs a real photo, what needs a price.
-    if (needsImage) filter.$or = [{ images: { $size: 0 } }, { images: { $exists: false } }]
+    if (needsImage) {
+      const noImage = [{ images: { $size: 0 } }, { images: { $exists: false } }]
+      if (filter.$or) {
+        filter.$and = [{ $or: filter.$or }, { $or: noImage }]
+        delete filter.$or
+      } else {
+        filter.$or = noImage
+      }
+    }
     if (needsPrice) filter.pricingModel = 'QUOTE_ONLY'
 
     const [items, total] = await Promise.all([
