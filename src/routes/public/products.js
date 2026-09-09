@@ -7,23 +7,10 @@ import { CustomerTier } from '../../models/CustomerTier.js'
 import { validate } from '../../middleware/validate.js'
 import { asyncHandler, ApiError } from '../../utils/ApiError.js'
 import { resolveTierCode } from '../../services/pricing/resolvePrice.js'
+import { buildVisibilityFilter } from '../../services/pricing/resolveOverride.js'
 import { publicProductCard, publicProductDetail, publicOptionGroup } from '../../services/serializers.js'
 
 export const publicProductsRouter = Router()
-
-/**
- * Build the visibility clause for a tier.
- *
- * This is a QUERY filter, never a response filter. A product the caller may not
- * see is never loaded from Mongo — so it cannot leak through a serialisation
- * mistake, a forgotten check on a new endpoint, or a debug field.
- */
-function visibilityClause(tierCode) {
-  const field =
-    { B2C: 'visibility.b2c', B2B: 'visibility.b2b', CORPORATE: 'visibility.corporate' }[tierCode] ??
-    'visibility.b2c' // an unrecognised tier gets the most restrictive public view
-  return { isActive: true, [field]: true }
-}
 
 async function tierContext(req) {
   const tierCode = await resolveTierCode(req.user)
@@ -48,14 +35,25 @@ publicProductsRouter.get(
     const { category, featured, search, page, limit } = req.validatedQuery
     const { tierCode, tierIsPublic } = await tierContext(req)
 
-    const filter = visibilityClause(tierCode)
+    // Query filter, never a response filter — includes per-organization
+    // product access, so a restricted corporate account never even loads a
+    // product it is not entitled to see.
+    const filter = await buildVisibilityFilter(req.user)
 
     if (category) {
       const cat = await Category.findOne({ slug: category, isActive: true }).select('_id').lean()
       if (!cat) throw ApiError.notFound('Category not found')
       // Matches the category itself OR anything beneath it — one indexed query,
       // which is what the cached ancestors array on the product buys us.
-      filter.$or = [{ categories: cat._id }, { categoryAncestors: cat._id }]
+      // An org allowlist may already own $or; combine with $and so one
+      // cannot silently widen the other.
+      const branch = [{ categories: cat._id }, { categoryAncestors: cat._id }]
+      if (filter.$or) {
+        filter.$and = [{ $or: filter.$or }, { $or: branch }]
+        delete filter.$or
+      } else {
+        filter.$or = branch
+      }
     }
     if (featured) filter.featured = featured === 'true'
     if (search) filter.$text = { $search: search }
@@ -106,7 +104,7 @@ publicProductsRouter.get(
 
     const product = await Product.findOne({
       slug: req.validatedParams.slug,
-      ...visibilityClause(tierCode),
+      ...(await buildVisibilityFilter(req.user)),
     })
       .populate('categories', 'name slug')
       .populate('primaryCategory', 'name slug')

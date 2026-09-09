@@ -39,6 +39,37 @@ export async function resolveTierCode(user) {
   return fallback?.code ?? 'B2C'
 }
 
+/**
+ * Apply a negotiated override to a resolved unit figure.
+ *
+ * Takes the tier price as the starting point and returns the contracted one,
+ * plus a line for the breakdown so a customer (and an admin) can see WHY the
+ * number differs from the published rate.
+ *
+ * Returns null when no override applies, so the caller keeps the tier price.
+ */
+function applyOverride(basePrice, override, readTier) {
+  if (!override) return null
+
+  if (override.overrideType === 'ABSOLUTE') {
+    return { price: override.value, label: 'Contracted rate' }
+  }
+
+  // PERCENT_OFF and MARKUP_ON_TIER are computed FROM a named tier, not from
+  // whatever the customer would otherwise have paid — so the discount is
+  // stable even if the customer's own tier changes.
+  const from = readTier(override.baseTier) ?? basePrice
+  if (from === undefined || from === null) return null
+
+  if (override.overrideType === 'PERCENT_OFF') {
+    return { price: from * (1 - override.value / 100), label: `Contracted ${override.value}% off` }
+  }
+  if (override.overrideType === 'MARKUP_ON_TIER') {
+    return { price: from * override.value, label: 'Contracted rate' }
+  }
+  return null
+}
+
 /** Pick the slab covering `qty`. Returns null when no slab matches. */
 function findSlab(slabs, qty) {
   return (
@@ -109,7 +140,7 @@ function applyOptionDeltas({ subtotal, area, selections, tierCode }) {
  * @param {object}  input       { quantity, width, height, selections[] }
  * @returns {object} { quotable, unitPrice, total, currency, breakdown[], reason? }
  */
-export function calculatePrice({ product, tierCode, input = {} }) {
+export function calculatePrice({ product, tierCode, input = {}, override = null }) {
   const quoteOnly = (reason) => ({
     quotable: false,
     requiresQuote: true,
@@ -135,8 +166,12 @@ export function calculatePrice({ product, tierCode, input = {} }) {
     case 'FIXED': {
       const amt = readTierValue(pricing.amounts, tierCode)
       if (amt === undefined) return quoteOnly('No price configured for your account type')
-      unitPrice = amt
-      breakdown.push({ label: `Base price per ${pricing.unit ?? 'unit'}`, amount: round(amt) })
+      const neg = applyOverride(amt, override, (t) => readTierValue(pricing.amounts, t))
+      unitPrice = neg ? neg.price : amt
+      breakdown.push({
+        label: neg ? `${neg.label} per ${pricing.unit ?? 'unit'}` : `Base price per ${pricing.unit ?? 'unit'}`,
+        amount: round(unitPrice),
+      })
       break
     }
 
@@ -146,12 +181,14 @@ export function calculatePrice({ product, tierCode, input = {} }) {
       if (!slab) return quoteOnly(`No price band covers a quantity of ${quantity}`)
       const amt = readTierValue(slab.amounts, tierCode)
       if (amt === undefined) return quoteOnly('No price configured for your account type')
+      const negSlab = applyOverride(amt, override, (t) => readTierValue(slab.amounts, t))
+      const bandPrice = negSlab ? negSlab.price : amt
       // A slab price is the price FOR THAT BAND, not per unit.
       breakdown.push({
-        label: `${slab.minQty}${slab.maxQty ? `–${slab.maxQty}` : '+'} ${pricing.unit ?? 'units'}`,
-        amount: round(amt),
+        label: `${slab.minQty}${slab.maxQty ? `–${slab.maxQty}` : '+'} ${pricing.unit ?? 'units'}${negSlab ? ` · ${negSlab.label}` : ''}`,
+        amount: round(bandPrice),
       })
-      const withOptions = applyOptionDeltas({ subtotal: amt, area: null, selections, tierCode })
+      const withOptions = applyOptionDeltas({ subtotal: bandPrice, area: null, selections, tierCode })
       breakdown.push(...withOptions.lines)
       return {
         quotable: true,
@@ -161,6 +198,7 @@ export function calculatePrice({ product, tierCode, input = {} }) {
         total: round(withOptions.total),
         currency: 'INR',
         tier: tierCode,
+        negotiated: Boolean(override),
         breakdown,
       }
     }
@@ -177,10 +215,11 @@ export function calculatePrice({ product, tierCode, input = {} }) {
       }
 
       area = computeArea(width, height, pricing)
-      unitPrice = rate
+      const negArea = applyOverride(rate, override, (t) => readTierValue(pricing.rates, t) ?? readTierValue(pricing.amounts, t))
+      unitPrice = negArea ? negArea.price : rate
       breakdown.push({
-        label: `${width} × ${height} = ${round(area)} ${pricing.unit ?? 'sq.ft'} @ ₹${rate}`,
-        amount: round(area * rate),
+        label: `${width} × ${height} = ${round(area)} ${pricing.unit ?? 'sq.ft'} @ ₹${round(unitPrice)}${negArea ? ` · ${negArea.label}` : ''}`,
+        amount: round(area * unitPrice),
       })
       break
     }
@@ -206,6 +245,8 @@ export function calculatePrice({ product, tierCode, input = {} }) {
     total: round(withOptions.total),
     currency: 'INR',
     tier: tierCode,
+    // Flags a contracted rate without revealing the agreement's terms.
+    negotiated: Boolean(override),
     breakdown,
   }
 }

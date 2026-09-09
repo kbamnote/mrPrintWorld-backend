@@ -5,7 +5,8 @@ import { Product } from '../../models/Product.js'
 import { OptionGroup } from '../../models/OptionGroup.js'
 import { validate } from '../../middleware/validate.js'
 import { asyncHandler, ApiError } from '../../utils/ApiError.js'
-import { calculatePrice, resolveTierCode } from '../../services/pricing/resolvePrice.js'
+import { calculatePrice } from '../../services/pricing/resolvePrice.js'
+import { resolvePricingContext, buildVisibilityFilter } from '../../services/pricing/resolveOverride.js'
 
 export const publicPricingRouter = Router()
 
@@ -55,15 +56,17 @@ publicPricingRouter.post(
   asyncHandler(async (req, res) => {
     const { slug, quantity, width, height, selections } = req.validatedBody
 
-    // Tier is derived here, from the session — never from the request.
-    const tierCode = await resolveTierCode(req.user)
-
-    const visField =
-      { B2C: 'visibility.b2c', B2B: 'visibility.b2b', CORPORATE: 'visibility.corporate' }[tierCode] ??
-      'visibility.b2c'
-
-    const product = await Product.findOne({ slug, isActive: true, [visField]: true }).lean()
+    // The product must be one this caller may see at all, including any
+    // per-organization allowlist.
+    const product = await Product.findOne({
+      slug,
+      ...(await buildVisibilityFilter(req.user)),
+    }).lean()
     if (!product) throw ApiError.notFound('Product not found')
+
+    // Tier AND any negotiated rate are derived here, from the session —
+    // never from the request body.
+    const { tierCode, override } = await resolvePricingContext(req.user, product)
 
     // Translate {group, value} codes into the priced option values. Selections
     // referencing an option the product does not offer are ignored rather than
@@ -84,11 +87,13 @@ publicPricingRouter.post(
           const value = (group.values ?? []).find((v) => v.code === String(sel.value))
           if (!value) return null
 
-          const override = overridesByGroupId.get(String(group._id))
+          // Named distinctly: `override` in this file now means a NEGOTIATED
+          // RATE, and shadowing it here would be a trap for the next reader.
+          const deltaOverride = overridesByGroupId.get(String(group._id))
           return {
             label: `${group.label}: ${value.label}`,
             deltaType: value.deltaType,
-            priceDelta: override ?? value.priceDelta,
+            priceDelta: deltaOverride ?? value.priceDelta,
           }
         })
         .filter(Boolean)
@@ -96,7 +101,8 @@ publicPricingRouter.post(
 
     const result = calculatePrice({
       product,
-      tierCode,
+      tierCode: tierCode ?? 'B2C',
+      override,
       input: { quantity, width, height, selections: resolvedSelections },
     })
 

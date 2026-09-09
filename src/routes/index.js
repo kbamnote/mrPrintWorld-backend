@@ -13,6 +13,8 @@ import { adminProductsRouter } from './admin/products.js'
 import { adminOptionGroupsRouter } from './admin/optionGroups.js'
 import { adminUploadsRouter } from './admin/uploads.js'
 import { adminCustomersRouter } from './admin/customers.js'
+import { adminOrganizationsRouter } from './admin/organizations.js'
+import { adminPriceOverridesRouter } from './admin/priceOverrides.js'
 
 export const apiRouter = Router()
 
@@ -37,3 +39,5 @@ apiRouter.use('/admin/products', adminProductsRouter)
 apiRouter.use('/admin/option-groups', adminOptionGroupsRouter)
 apiRouter.use('/admin/uploads', adminUploadsRouter)
 apiRouter.use('/admin/customers', adminCustomersRouter)
+apiRouter.use('/admin/organizations', adminOrganizationsRouter)
+apiRouter.use('/admin/price-overrides', adminPriceOverridesRouter)
