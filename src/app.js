@@ -34,7 +34,14 @@ export function createApp() {
         // script. Those are not browser requests, so CORS is not the control.
         if (!origin) return cb(null, true)
         if (env.corsOrigins.includes(origin)) return cb(null, true)
-        cb(new Error(`Origin ${origin} is not allowed`))
+
+        // Disallowed: answer WITHOUT the Access-Control-Allow-Origin header
+        // rather than throwing. The browser blocks the response either way,
+        // but throwing here surfaces as a 500, which looks like a server fault
+        // and buries the real cause (a missing origin in CORS_ORIGINS) in
+        // noise. `cb(null, false)` is the honest signal.
+        if (!env.isProd) console.warn(`CORS: rejected origin ${origin}`)
+        cb(null, false)
       },
       credentials: true, // the admin refresh cookie needs this
     }),
