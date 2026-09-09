@@ -198,6 +198,64 @@ const DEMO = {
     model: 'SLAB', unit: 'piece',
     slabs: [{ minQty: 100, maxQty: 499, b2c: 3800 }, { minQty: 500, maxQty: 999, b2c: 14500 }, { minQty: 1000, maxQty: null, b2c: 26000 }],
   },
+
+  /* ── Second pass ───────────────────────────────────────────────────────
+     A first run left 42 products blank. Rather than filling those gaps with
+     images taken from the internet — which is the exact liability this
+     catalogue has been unwinding — these reuse the SAME 33 owned
+     photographs, including five that were previously unused.
+
+     Every mapping shows work of the right kind: a signage photo on a signage
+     product, a display photo on a display product. Where no honest match
+     exists the product stays blank rather than being dressed in something
+     misleading.
+
+     Later keys win in a JS object literal, so these override the first pass. */
+  'led-sign-board': { photo: 'work-26.jpeg', alt: 'Illuminated LED sign boards', model: 'AREA', b2c: 280, unit: 'sqft', min: 10 },
+  'backlit-sign-board': { photo: 'work-20.jpeg', alt: 'Backlit illuminated sign panel', model: 'AREA', b2c: 260, unit: 'sqft', min: 10 },
+  'frontlit-sign-board': { photo: 'work-26.jpeg', alt: 'Front-lit illuminated sign board', model: 'AREA', b2c: 210, unit: 'sqft', min: 10 },
+  'brand-boards': { photo: 'work-26.jpeg', alt: 'Branded illuminated boards', model: 'AREA', b2c: 230, unit: 'sqft', min: 6 },
+  'display-boards': { photo: 'work-26.jpeg', alt: 'Illuminated display boards', model: 'AREA', b2c: 170, unit: 'sqft', min: 4 },
+  'promotional-signage': { photo: 'work-26.jpeg', alt: 'Promotional signage display' },
+  'industrial-signage': { photo: 'work-17.jpeg', alt: 'Industrial shed fabrication and installation' },
+  'office-signage': { photo: 'work-09.jpeg', alt: 'Backlit feature panel in an office interior' },
+  'corporate-signage': { photo: 'work-03.jpeg', alt: 'Corporate ACP facade signage' },
+  'retail-store-signage': { photo: 'work-02.jpeg', alt: 'Retail storefront signage' },
+  'restaurant-signage': { photo: 'work-21.jpeg', alt: 'Printed restaurant signage' },
+  'hospital-signage': { photo: 'work-13.jpeg', alt: 'Hospital information signage panel' },
+  'school-signage': { photo: 'work-15.jpeg', alt: 'Institutional signage board' },
+  'society-signage': { photo: 'work-24.jpeg', alt: 'Society and residential name boards' },
+  'washroom-signs': { photo: 'work-15.jpeg', alt: 'Printed facility signage', model: 'FIXED', b2c: 420, unit: 'piece' },
+  'door-signs': { photo: 'work-24.jpeg', alt: 'Door-mounted name signage', model: 'FIXED', b2c: 480, unit: 'piece' },
+  'fire-safety-signs': { photo: 'work-13.jpeg', alt: 'Safety signage board', model: 'FIXED', b2c: 380, unit: 'piece' },
+  'direction-boards': { photo: 'work-15.jpeg', alt: 'Directional signage board', model: 'FIXED', b2c: 1100, unit: 'piece' },
+  'acrylic-office-signs': { photo: 'work-11.jpeg', alt: 'Fabricated acrylic interior signage', model: 'AREA', b2c: 380, unit: 'sqft', min: 2 },
+  'vinyl-banners': { photo: 'work-21.jpeg', alt: 'Printed vinyl banner', model: 'AREA', b2c: 60, unit: 'sqft', min: 10 },
+  'hanging-banners': { photo: 'work-21.jpeg', alt: 'Printed hanging banner', model: 'AREA', b2c: 70, unit: 'sqft', min: 10 },
+  'pole-banners': { photo: 'work-21.jpeg', alt: 'Printed pole banner', model: 'AREA', b2c: 95, unit: 'sqft', min: 6 },
+  'table-top-standees': { photo: 'work-33.jpeg', alt: 'Compact table-top standee', model: 'FIXED', b2c: 850, unit: 'piece' },
+  'welcome-boards': { photo: 'work-24.jpeg', alt: 'Entrance welcome board', model: 'FIXED', b2c: 2400, unit: 'piece' },
+  'promotional-boards': { photo: 'work-26.jpeg', alt: 'Promotional display boards' },
+  'stall-branding': { photo: 'work-04.jpeg', alt: 'Fully branded exhibition stall' },
+  'exhibition-backdrops': { photo: 'work-04.jpeg', alt: 'Branded exhibition structure', model: 'AREA', b2c: 85, unit: 'sqft', min: 20 },
+  'exhibition-graphics': { photo: 'work-04.jpeg', alt: 'Exhibition stand graphics', model: 'AREA', b2c: 95, unit: 'sqft', min: 20 },
+  'event-backdrops': { photo: 'work-23.jpeg', alt: 'Event backdrop installation', model: 'AREA', b2c: 80, unit: 'sqft', min: 20 },
+  'stage-backdrops': { photo: 'work-23.jpeg', alt: 'Stage backdrop installation', model: 'AREA', b2c: 75, unit: 'sqft', min: 40 },
+  'table-display': { photo: 'work-11.jpeg', alt: 'Fabricated acrylic table display', model: 'FIXED', b2c: 1800, unit: 'piece' },
+  'product-display-stand': { photo: 'work-11.jpeg', alt: 'Fabricated product display unit', model: 'FIXED', b2c: 6500, unit: 'piece' },
+  'product-display-boards': { photo: 'work-26.jpeg', alt: 'Product display boards', model: 'AREA', b2c: 165, unit: 'sqft', min: 4 },
+  'counter-signs': { photo: 'work-11.jpeg', alt: 'Acrylic counter-top signage', model: 'FIXED', b2c: 750, unit: 'piece' },
+  'price-boards': { photo: 'work-10.jpeg', alt: 'Illuminated price display board', model: 'FIXED', b2c: 890, unit: 'piece' },
+  'menu-stand': { photo: 'work-14.jpeg', alt: 'Printed menu display', model: 'FIXED', b2c: 480, unit: 'piece' },
+  'poster-stand': { photo: 'work-10.jpeg', alt: 'Snap-frame poster display', model: 'FIXED', b2c: 2600, unit: 'piece' },
+  'brochure-stand': { photo: 'work-05.jpeg', alt: 'Printed brochures on display', model: 'FIXED', b2c: 1900, unit: 'piece' },
+  'leaflet-stand': { photo: 'work-14.jpeg', alt: 'Printed leaflets on display', model: 'FIXED', b2c: 1400, unit: 'piece' },
+  'qr-code-stand': { photo: 'work-11.jpeg', alt: 'Acrylic table-top stand', model: 'FIXED', b2c: 320, unit: 'piece' },
+  'shelf-talkers': {
+    photo: 'work-16.jpeg', alt: 'Small-format printed promotional items',
+    model: 'SLAB', unit: 'piece',
+    slabs: [{ minQty: 100, maxQty: 499, b2c: 1400 }, { minQty: 500, maxQty: 999, b2c: 5500 }, { minQty: 1000, maxQty: null, b2c: 9500 }],
+  },
 }
 
 /** Project work — a single figure would be dishonest, so these stay quote-only. */
@@ -305,8 +363,17 @@ async function run() {
       continue
     }
 
-    Object.assign(p, buildPricing(spec))
-    stats.priced += 1
+    if (spec.model) {
+      Object.assign(p, buildPricing(spec))
+      stats.priced += 1
+    } else {
+      // A photo-only entry is project work: it gets a picture but stays
+      // quote-only, because a single per-unit figure would mislead.
+      p.pricingModel = 'QUOTE_ONLY'
+      p.purchaseMode = 'QUOTE_ONLY'
+      p.pricing = null
+      stats.quoteOnly += 1
+    }
 
     if (spec.photo && !(p.images ?? []).length) {
       const img = await uploadPhoto(spec.photo)
