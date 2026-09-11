@@ -13,7 +13,12 @@ import {
   clearRefreshCookie,
   REFRESH_COOKIES,
 } from '../middleware/auth.js'
-import { resolveResellerFor, findActiveResellerByCode, storeNameOf } from '../services/reseller.js'
+import {
+  resolveResellerFor,
+  findActiveResellerByCode,
+  storeNameOf,
+  canJoinReseller,
+} from '../services/reseller.js'
 
 export const customerAuthRouter = Router()
 
@@ -158,11 +163,13 @@ customerAuthRouter.post(
       .object({
         email: z.string().trim().toLowerCase().email(),
         password: z.string().min(1).max(200),
+        // Present when signing in from a reseller's store.
+        referralCode: z.string().trim().max(16).regex(/^[A-Za-z0-9]+$/).optional(),
       })
       .strict(),
   }),
   asyncHandler(async (req, res) => {
-    const { email, password } = req.validatedBody
+    const { email, password, referralCode } = req.validatedBody
     const user = await User.findOne({ email }).select('+passwordHash')
 
     // One message for both "no such user" and "wrong password", so the
@@ -170,6 +177,17 @@ customerAuthRouter.post(
     const ok = user && user.isActive && (await user.verifyPassword(password))
     if (!ok) throw ApiError.unauthorized('Invalid email or password')
     if (user.status === 'SUSPENDED') throw ApiError.forbidden('This account has been suspended')
+
+    // Signing in from a reseller's store makes an unclaimed account that
+    // reseller's customer, just as signing up through the link would.
+    // canJoinReseller() protects anyone who is already someone's customer.
+    if (referralCode && !user.referredBy) {
+      const referrer = await findActiveResellerByCode(referralCode)
+      if (await canJoinReseller(user, referrer)) {
+        user.referredBy = referrer._id
+        user.referredAt = new Date()
+      }
+    }
 
     user.lastLoginAt = new Date()
     await user.save()

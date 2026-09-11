@@ -227,6 +227,45 @@ await test('a customer cannot open the reseller dashboard', async () => {
   assert.equal(res.status, 403)
 })
 
+/* ── Signing in from a store ───────────────────────────────────────────── */
+
+async function makeExisting(label) {
+  const u = new User({
+    email: `${S}-${label}@example.com`, name: `Existing ${label}`, role: 'CUSTOMER',
+    status: 'ACTIVE', resolvedTier: 'B2C', isActive: true,
+  })
+  await u.setPassword(PASSWORD)
+  await u.save()
+  return u
+}
+
+await test('an existing account with no orders that signs in from a store joins that reseller', async () => {
+  const u = await makeExisting('newcomer')
+  const res = await call('POST', '/api/auth/login', { email: u.email, password: PASSWORD, referralCode: CODE })
+  assert.equal(res.status, 200)
+  const data = await json(res)
+  assert.equal(data.user.soldBy?.code, CODE, 'kept in the store after signing in')
+  const saved = await User.findById(u._id).lean()
+  assert.equal(String(saved.referredBy), String(resellerUser._id))
+})
+
+await test('an account that has already bought from us directly is NOT moved to a reseller', async () => {
+  const u = await makeExisting('buyer')
+  await Order.create({
+    orderNumber: await nextOrderNumber(),
+    user: u._id,
+    customer: { name: u.name, email: u.email },
+    items: [{ product: product._id, name: product.name, slug: product.slug, quantity: 1, unitPrice: 100, lineTotal: 100, tierCode: 'B2C' }],
+    subtotal: 100, taxTotal: 0, grandTotal: 100,
+    status: 'PAID', payment: { status: 'PAID', paidAt: new Date() },
+  })
+  const res = await call('POST', '/api/auth/login', { email: u.email, password: PASSWORD, referralCode: CODE })
+  assert.equal(res.status, 200, 'sign-in itself still works')
+  assert.equal((await json(res)).user.soldBy, null)
+  const saved = await User.findById(u._id).lean()
+  assert.equal(saved.referredBy, null, 'our own customer stays ours')
+})
+
 /* ── When reseller pricing stops ───────────────────────────────────────── */
 
 await test('a paused reseller’s customers pay normal retail, with no "sold via"', async () => {
@@ -246,6 +285,7 @@ await test('a referred customer approved for trade pays their own trade rate', a
 
 /* Cleanup */
 await Order.deleteMany({ reseller: resellerUser._id })
+await Order.deleteMany({ 'customer.email': { $regex: S } })
 await ResellerPrice.deleteMany({ reseller: resellerUser._id })
 await Product.deleteMany({ slug: { $regex: S } })
 await User.deleteMany({ email: { $regex: S } })

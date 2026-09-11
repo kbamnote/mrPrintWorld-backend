@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import { User } from '../models/User.js'
 import { ResellerPrice } from '../models/ResellerPrice.js'
+import { Order } from '../models/Order.js'
 import { calculatePrice } from './pricing/resolvePrice.js'
 import { resolvePricingContext } from './pricing/resolveOverride.js'
 
@@ -54,6 +55,27 @@ export async function resolveResellerFor(user) {
   if (String(user.referredBy) === String(user._id)) return null
 
   return User.findOne({ _id: user.referredBy, 'reseller.status': 'ACTIVE', isActive: true }).lean()
+}
+
+/**
+ * May this EXISTING account become this reseller's customer by signing in
+ * from their store?
+ *
+ * Yes for an account nobody has claimed: retail, no organization, not a
+ * reseller, and never a paying customer of ours. No for anyone who already
+ * belongs to a reseller, has trade or corporate terms, or has bought from us
+ * directly — a reseller's link must not be able to take over our customers.
+ */
+export async function canJoinReseller(user, reseller) {
+  if (!user || !reseller) return false
+  if (user.referredBy) return false
+  if (String(user._id) === String(reseller._id)) return false
+  if (user.role !== 'CUSTOMER') return false
+  if (user.resolvedTier && user.resolvedTier !== 'B2C') return false
+  if (user.organization) return false
+  if (user.reseller?.status) return false
+  const hasBought = await Order.exists({ user: user._id, 'payment.status': { $in: ['PAID', 'REFUNDED'] } })
+  return !hasBought
 }
 
 export function storeNameOf(reseller) {
