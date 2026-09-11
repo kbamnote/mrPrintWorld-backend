@@ -42,17 +42,38 @@ adminCategoriesRouter.get(
   asyncHandler(async (_req, res) => {
     const items = await Category.find().sort({ depth: 1, order: 1, name: 1 }).lean()
 
-    // Product counts per category, so admins can see what a category holds
-    // before they try to delete or move it.
+    // Product counts per category, INCLUDING everything beneath it, so a root
+    // shows what its whole branch holds. `liveCount` is what the storefront
+    // uses to decide whether a category appears at all — a category with no
+    // live products is kept off the website, and the admin needs to see why.
     const counts = await Product.aggregate([
-      { $unwind: '$categories' },
-      { $group: { _id: '$categories', count: { $sum: 1 } } },
+      {
+        $project: {
+          isActive: 1,
+          cats: {
+            $setUnion: [{ $ifNull: ['$categories', []] }, { $ifNull: ['$categoryAncestors', []] }],
+          },
+        },
+      },
+      { $unwind: '$cats' },
+      {
+        $group: {
+          _id: '$cats',
+          count: { $sum: 1 },
+          live: { $sum: { $cond: ['$isActive', 1, 0] } },
+        },
+      },
     ])
-    const countBy = new Map(counts.map((c) => [String(c._id), c.count]))
+    const countBy = new Map(counts.map((c) => [String(c._id), c]))
 
     res.json({
       ok: true,
-      data: items.map((c) => ({ ...c, id: String(c._id), productCount: countBy.get(String(c._id)) ?? 0 })),
+      data: items.map((c) => ({
+        ...c,
+        id: String(c._id),
+        productCount: countBy.get(String(c._id))?.count ?? 0,
+        liveCount: countBy.get(String(c._id))?.live ?? 0,
+      })),
     })
   }),
 )
@@ -63,8 +84,25 @@ adminCategoriesRouter.post(
   asyncHandler(async (req, res) => {
     const body = req.validatedBody
     const slug = slugify(body.slug ?? body.name, { lower: true, strict: true })
+    const parent = body.parent ?? null
 
-    const category = new Category({ ...body, slug, createdBy: req.user._id })
+    if (parent && !(await Category.exists({ _id: parent }))) {
+      throw ApiError.badRequest('Parent category not found')
+    }
+
+    // Say which name clashes, rather than the generic duplicate-key message.
+    if (await Category.exists({ parent, slug })) {
+      throw ApiError.conflict(`"${body.name}" already exists ${parent ? 'in this category' : 'as a category'}`)
+    }
+
+    // No sort-order field in the admin form: a new category goes to the end of
+    // its siblings, which is where someone adding it expects to find it.
+    if (body.order === undefined) {
+      const last = await Category.findOne({ parent }).sort({ order: -1 }).select('order').lean()
+      body.order = (last?.order ?? 0) + 1
+    }
+
+    const category = new Category({ ...body, parent, slug, createdBy: req.user._id })
     await category.save()
 
     res.status(201).json({ ok: true, data: category.toJSON() })
