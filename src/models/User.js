@@ -64,6 +64,30 @@ const userSchema = new mongoose.Schema(
       address: { type: String, trim: true },
     },
 
+    /**
+     * Reseller programme. `status` gates everything: referral pricing and
+     * commission apply ONLY while ACTIVE. PENDING is written by the customer's
+     * own application; every other transition is an admin action.
+     */
+    reseller: {
+      status: { type: String, enum: ['PENDING', 'ACTIVE', 'PAUSED'], default: null, index: true },
+      code: { type: String, trim: true, uppercase: true },
+      storeName: { type: String, trim: true, maxlength: 80 },
+      /** null = customers pay our retail price; a number = % on top of the reseller's own cost. */
+      defaultMarkupPercent: { type: Number, min: 0, max: 1000, default: null },
+      appliedAt: { type: Date, default: null },
+      approvedAt: { type: Date, default: null },
+      approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    },
+
+    /**
+     * The reseller whose link this customer signed up through. Written once,
+     * at registration, and never by the customer afterwards — attribution is
+     * for life, which is what lets a reseller share freely.
+     */
+    referredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
+    referredAt: { type: Date, default: null },
+
     approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     approvedAt: { type: Date, default: null },
     rejectionReason: { type: String, trim: true, default: null },
@@ -75,6 +99,13 @@ const userSchema = new mongoose.Schema(
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true },
+)
+
+// A referral code identifies exactly one reseller. Partial, so the many users
+// without a code do not collide on null.
+userSchema.index(
+  { 'reseller.code': 1 },
+  { unique: true, partialFilterExpression: { 'reseller.code': { $type: 'string' } } },
 )
 
 userSchema.methods.setPassword = async function setPassword(plain) {

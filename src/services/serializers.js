@@ -41,7 +41,7 @@ function primaryImage(product) {
 }
 
 /** Listing card — deliberately lean. */
-export function publicProductCard(product, { tierCode, showPrice }) {
+export function publicProductCard(product, { tierCode, showPrice, hidePrice = false }) {
   return {
     id: String(product._id),
     name: product.name,
@@ -55,14 +55,14 @@ export function publicProductCard(product, { tierCode, showPrice }) {
     ),
     // Omitted ENTIRELY for anonymous callers — the key is absent rather than
     // null, so no pricing is inferable from the response shape.
-    ...(showPrice ? { price: resolveDisplayPrice({ product, tierCode }) } : {}),
+    ...(showPrice && !hidePrice ? { price: resolveDisplayPrice({ product, tierCode }) } : {}),
     // Tells the storefront to render "View price" rather than a figure.
     requiresSignIn: !showPrice,
   }
 }
 
 /** Detail page — everything a product page renders, and nothing more. */
-export function publicProductDetail(product, { tierCode, showPrice, optionGroups = [] }) {
+export function publicProductDetail(product, { tierCode, showPrice, hidePrice = false, optionGroups = [] }) {
   return {
     id: String(product._id),
     name: product.name,
@@ -97,7 +97,7 @@ export function publicProductDetail(product, { tierCode, showPrice, optionGroups
     purchaseMode: product.purchaseMode,
     // The calculator needs the option SHAPE, never the tier rate table.
     options: optionGroups,
-    ...(showPrice ? { price: resolveDisplayPrice({ product, tierCode }) } : {}),
+    ...(showPrice && !hidePrice ? { price: resolveDisplayPrice({ product, tierCode }) } : {}),
     requiresSignIn: !showPrice,
 
     seo: {

@@ -58,6 +58,12 @@ const orderItemSchema = new mongoose.Schema(
     taxAmount: { type: Number, default: 0 },
 
     breakdown: { type: Array, default: [] },
+
+    // Reseller sales only. What the reseller would have paid for this line,
+    // and the margin credited to them. Never sent to the customer — see
+    // customerSafeOrder() in services/reseller.js.
+    resellerCost: { type: Number, default: null },
+    commission: { type: Number, default: null },
   },
   { _id: false },
 )
@@ -105,6 +111,18 @@ const orderSchema = new mongoose.Schema(
     customerNote: { type: String, trim: true, maxlength: 1000 },
 
     status: { type: String, enum: ORDER_STATUSES, default: 'PENDING_PAYMENT', index: true },
+
+    /**
+     * Reseller sale. The commission is a snapshot, like every other figure on
+     * an order: a reseller changing their markup tomorrow does not change what
+     * they earned today.
+     */
+    reseller: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
+    resellerSnapshot: { name: String, storeName: String, code: String },
+    commissionTotal: { type: Number, default: 0 },
+
+    /** Starts the 7-day clock before a reseller's commission can be withdrawn. */
+    deliveredAt: { type: Date, default: null },
 
     payment: {
       provider: { type: String, default: 'razorpay' },

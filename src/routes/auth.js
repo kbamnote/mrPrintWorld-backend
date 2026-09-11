@@ -13,6 +13,7 @@ import {
   clearRefreshCookie,
   REFRESH_COOKIES,
 } from '../middleware/auth.js'
+import { resolveResellerFor, findActiveResellerByCode, storeNameOf } from '../services/reseller.js'
 
 export const customerAuthRouter = Router()
 
@@ -50,10 +51,13 @@ const registerBody = z
     phone: z.string().trim().max(24).optional(),
     accountType: z.enum(['B2C', 'B2B', 'CORPORATE']).default('B2C'),
     businessProfile: businessProfile.optional(),
+    // From a reseller's share link. An unknown or paused code is ignored
+    // rather than failing the signup.
+    referralCode: z.string().trim().max(16).regex(/^[A-Za-z0-9]+$/).optional(),
   })
   .strict()
 
-function publicUser(user, tier) {
+function publicUser(user, tier, seller = null) {
   return {
     id: String(user._id),
     name: user.name,
@@ -65,6 +69,16 @@ function publicUser(user, tier) {
     tier: { code: user.resolvedTier, name: tier?.name ?? 'Retail' },
     businessProfile: user.businessProfile ?? null,
     organization: user.organization ? String(user.organization) : null,
+    // Whose customer this is — shown as "Sold via …" next to prices.
+    soldBy: seller ? { storeName: storeNameOf(seller) } : null,
+    // This account's own reseller standing, if it has applied.
+    reseller: user.reseller?.status
+      ? {
+          status: user.reseller.status,
+          code: user.reseller.code ?? null,
+          storeName: user.reseller.storeName ?? null,
+        }
+      : null,
   }
 }
 
@@ -72,12 +86,18 @@ async function tierFor(user) {
   return CustomerTier.findOne({ code: user.resolvedTier }).lean()
 }
 
+async function describeUser(user) {
+  const [tier, seller] = await Promise.all([tierFor(user), resolveResellerFor(user)])
+  return publicUser(user, tier, seller)
+}
+
 customerAuthRouter.post(
   '/register',
   authLimiter,
   validate({ body: registerBody }),
   asyncHandler(async (req, res) => {
-    const { name, email, password, phone, accountType, businessProfile: profile } = req.validatedBody
+    const { name, email, password, phone, accountType, businessProfile: profile, referralCode } =
+      req.validatedBody
 
     if (await User.exists({ email })) {
       throw ApiError.conflict('An account with that email already exists')
@@ -88,6 +108,11 @@ customerAuthRouter.post(
 
     const status =
       accountType === 'B2B' ? 'B2B_PENDING' : accountType === 'CORPORATE' ? 'CORPORATE_PENDING' : 'ACTIVE'
+
+    // Attribution happens here and only here: an EXISTING account is never
+    // moved to a reseller by clicking a link, so resellers cannot poach
+    // customers who came to us directly.
+    const referrer = referralCode ? await findActiveResellerByCode(referralCode) : null
 
     const user = new User({
       name,
@@ -101,6 +126,8 @@ customerAuthRouter.post(
       // than a rule someone has to remember to enforce.
       resolvedTier: 'B2C',
       businessProfile: profile ?? undefined,
+      referredBy: referrer?._id ?? null,
+      referredAt: referrer ? new Date() : null,
     })
     await user.setPassword(password)
     await user.save()
@@ -110,7 +137,7 @@ customerAuthRouter.post(
       ok: true,
       data: {
         accessToken: signAccessToken(user),
-        user: publicUser(user, await tierFor(user)),
+        user: await describeUser(user),
         // Told plainly, so nobody is surprised by retail pricing after
         // registering as a business.
         message:
@@ -149,7 +176,7 @@ customerAuthRouter.post(
     setRefreshCookie(res, 'customer', signRefreshToken(user))
     res.json({
       ok: true,
-      data: { accessToken: signAccessToken(user), user: publicUser(user, await tierFor(user)) },
+      data: { accessToken: signAccessToken(user), user: await describeUser(user) },
     })
   }),
 )
@@ -174,7 +201,7 @@ customerAuthRouter.post(
     setRefreshCookie(res, 'customer', signRefreshToken(user)) // rotate on use
     res.json({
       ok: true,
-      data: { accessToken: signAccessToken(user), user: publicUser(user, await tierFor(user)) },
+      data: { accessToken: signAccessToken(user), user: await describeUser(user) },
     })
   }),
 )
@@ -188,7 +215,7 @@ customerAuthRouter.get(
   '/me',
   asyncHandler(async (req, res) => {
     if (!req.user) throw ApiError.unauthorized('Not signed in')
-    res.json({ ok: true, data: publicUser(req.user, await tierFor(req.user)) })
+    res.json({ ok: true, data: await describeUser(req.user) })
   }),
 )
 
@@ -232,7 +259,7 @@ customerAuthRouter.post(
     res.json({
       ok: true,
       data: {
-        user: publicUser(user, await tierFor(user)),
+        user: await describeUser(user),
         message: 'Application submitted. We will confirm by email once it is reviewed.',
       },
     })

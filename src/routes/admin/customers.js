@@ -5,6 +5,7 @@ import { CustomerTier } from '../../models/CustomerTier.js'
 import { validate } from '../../middleware/validate.js'
 import { asyncHandler, ApiError } from '../../utils/ApiError.js'
 import { objectId } from '../../schemas/common.js'
+import { generateResellerCode } from '../../services/reseller.js'
 
 export const adminCustomersRouter = Router()
 
@@ -28,6 +29,8 @@ adminCustomersRouter.get(
 
     const filter = { role: 'CUSTOMER' }
     if (status === 'PENDING') filter.status = { $in: PENDING }
+    else if (status === 'RESELLER_PENDING') filter['reseller.status'] = 'PENDING'
+    else if (status === 'RESELLERS') filter['reseller.status'] = { $in: ['ACTIVE', 'PAUSED'] }
     else if (status) filter.status = status
     if (accountType) filter.accountType = accountType
     if (search) {
@@ -38,11 +41,19 @@ adminCustomersRouter.get(
       ]
     }
 
-    const [items, total, pendingCount] = await Promise.all([
+    const [items, total, pendingCount, resellerPendingCount] = await Promise.all([
       User.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
       User.countDocuments(filter),
       User.countDocuments({ role: 'CUSTOMER', status: { $in: PENDING } }),
+      User.countDocuments({ role: 'CUSTOMER', 'reseller.status': 'PENDING' }),
     ])
+
+    // Which reseller each customer belongs to, in one query.
+    const referrerIds = [...new Set(items.map((u) => u.referredBy).filter(Boolean).map(String))]
+    const referrers = referrerIds.length
+      ? await User.find({ _id: { $in: referrerIds } }).select('name reseller.storeName reseller.code').lean()
+      : []
+    const referrerById = new Map(referrers.map((r) => [String(r._id), r]))
 
     res.json({
       ok: true,
@@ -58,8 +69,19 @@ adminCustomersRouter.get(
         createdAt: u.createdAt,
         lastLoginAt: u.lastLoginAt ?? null,
         rejectionReason: u.rejectionReason ?? null,
+        reseller: u.reseller?.status
+          ? {
+              status: u.reseller.status,
+              code: u.reseller.code ?? null,
+              storeName: u.reseller.storeName ?? null,
+            }
+          : null,
+        referredBy: (() => {
+          const r = u.referredBy ? referrerById.get(String(u.referredBy)) : null
+          return r ? { id: String(r._id), storeName: r.reseller?.storeName ?? r.name, code: r.reseller?.code ?? null } : null
+        })(),
       })),
-      meta: { page, limit, total, pages: Math.ceil(total / limit), pendingCount },
+      meta: { page, limit, total, pages: Math.ceil(total / limit), pendingCount, resellerPendingCount },
     })
   }),
 )
@@ -143,6 +165,68 @@ adminCustomersRouter.patch(
   }),
 )
 
+/**
+ * Reseller standing: approve (or make someone a reseller directly), decline
+ * an application, pause, resume.
+ *
+ * While PAUSED, the reseller's customers pay normal retail and no commission
+ * is recorded — nothing is deleted, so resuming restores everything.
+ */
+adminCustomersRouter.patch(
+  '/:id/reseller',
+  validate({
+    params: z.object({ id: objectId }).strict(),
+    body: z
+      .object({
+        action: z.enum(['approve', 'decline', 'pause', 'resume']),
+        storeName: z.string().trim().min(2).max(80).optional(),
+      })
+      .strict(),
+  }),
+  asyncHandler(async (req, res) => {
+    const user = await User.findById(req.validatedParams.id)
+    if (!user) throw ApiError.notFound('Customer not found')
+
+    const { action, storeName } = req.validatedBody
+    const current = user.reseller?.status ?? null
+
+    if (action === 'approve') {
+      if (!user.resolvedTier || user.resolvedTier === 'B2C') {
+        throw ApiError.conflict(
+          'Approve this customer for trade pricing first — a reseller earns the gap between their trade price and what their customer pays.',
+        )
+      }
+      if (current === 'ACTIVE') throw ApiError.conflict('Already an active reseller')
+      user.reseller.status = 'ACTIVE'
+      user.reseller.storeName =
+        storeName ?? user.reseller.storeName ?? user.businessProfile?.businessName ?? user.name
+      if (!user.reseller.code) user.reseller.code = await generateResellerCode(user.reseller.storeName)
+      user.reseller.approvedAt = new Date()
+      user.reseller.approvedBy = req.user._id
+    } else if (action === 'decline') {
+      if (current !== 'PENDING') throw ApiError.conflict('There is no reseller application to decline')
+      user.reseller.status = null
+    } else if (action === 'pause') {
+      if (current !== 'ACTIVE') throw ApiError.conflict('Only an active reseller can be paused')
+      user.reseller.status = 'PAUSED'
+    } else if (action === 'resume') {
+      if (current !== 'PAUSED') throw ApiError.conflict('Only a paused reseller can be resumed')
+      user.reseller.status = 'ACTIVE'
+    }
+
+    await user.save()
+    res.json({
+      ok: true,
+      data: {
+        id: String(user._id),
+        reseller: user.reseller.status
+          ? { status: user.reseller.status, code: user.reseller.code ?? null, storeName: user.reseller.storeName ?? null }
+          : null,
+      },
+    })
+  }),
+)
+
 /** Revoke an approved tier — back to retail, without deleting the account. */
 adminCustomersRouter.patch(
   '/:id/revoke',
@@ -157,6 +241,9 @@ adminCustomersRouter.patch(
     user.resolvedTier = 'B2C'
     user.status = 'ACTIVE'
     user.rejectionReason = req.validatedBody.reason ?? null
+    // No trade price means no margin to earn — pause reselling too. Their
+    // customers fall back to normal retail pricing.
+    if (user.reseller?.status === 'ACTIVE') user.reseller.status = 'PAUSED'
     // Invalidates every live session for this user, so the change takes
     // effect immediately rather than whenever their token happens to expire.
     user.tokenVersion += 1

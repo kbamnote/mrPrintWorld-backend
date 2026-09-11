@@ -2,6 +2,7 @@ import { Product } from '../models/Product.js'
 import { OptionGroup } from '../models/OptionGroup.js'
 import { calculatePrice } from './pricing/resolvePrice.js'
 import { resolvePricingContext, buildVisibilityFilter } from './pricing/resolveOverride.js'
+import { resolveResellerFor, loadMarkups, markupFor, priceForReferred } from './reseller.js'
 
 /**
  * Prices a cart.
@@ -31,7 +32,10 @@ export async function priceCart(lines, user) {
   const items = []
 
   if (!lines?.length) {
-    return { items: [], subtotal: 0, taxTotal: 0, shippingTotal: 0, grandTotal: 0, issues: [] }
+    return {
+      items: [], subtotal: 0, taxTotal: 0, shippingTotal: 0, grandTotal: 0, issues: [],
+      reseller: null, commissionTotal: 0,
+    }
   }
 
   // One visibility filter for the whole cart — a product the caller may not
@@ -46,8 +50,12 @@ export async function priceCart(lines, user) {
   const groups = groupIds.length
     ? await OptionGroup.find({ _id: { $in: groupIds }, isActive: true }).lean()
     : []
-  const groupById = new Map(groups.map((g) => [String(g._id), g]))
   const groupByCode = new Map(groups.map((g) => [g.code, g]))
+
+  // A reseller's customer is priced at the reseller's price — resolved once
+  // for the whole cart.
+  const reseller = await resolveResellerFor(user)
+  const markups = reseller ? await loadMarkups(reseller._id, products.map((p) => p._id)) : new Map()
 
   for (const line of lines) {
     const product = bySlug.get(line.slug)
@@ -101,18 +109,29 @@ export async function priceCart(lines, user) {
       })
     }
 
-    const { tierCode, override } = await resolvePricingContext(user, product)
-    const priced = calculatePrice({
-      product,
-      tierCode: tierCode ?? 'B2C',
-      override,
-      input: {
-        quantity: qty,
-        width: line.width,
-        height: line.height,
-        selections: resolvedSelections,
-      },
-    })
+    const input = { quantity: qty, width: line.width, height: line.height, selections: resolvedSelections }
+    let priced = null
+    let resellerCost = null
+    let commission = null
+
+    if (reseller) {
+      const sale = await priceForReferred({
+        reseller,
+        product,
+        input,
+        markupPercent: markupFor(reseller, product._id, markups),
+      })
+      if (sale) {
+        priced = sale.priced
+        resellerCost = sale.costTotal
+        commission = sale.commission
+      }
+    }
+
+    if (!priced) {
+      const { tierCode, override } = await resolvePricingContext(user, product)
+      priced = calculatePrice({ product, tierCode: tierCode ?? 'B2C', override, input })
+    }
 
     if (!priced.quotable) {
       issues.push({ slug: line.slug, message: `${product.name}: ${priced.reason}` })
@@ -141,6 +160,8 @@ export async function priceCart(lines, user) {
       taxAmount,
       breakdown: priced.breakdown,
       purchaseMode: product.purchaseMode,
+      resellerCost,
+      commission,
     })
   }
 
@@ -148,8 +169,15 @@ export async function priceCart(lines, user) {
   const taxTotal = round(items.reduce((s, i) => s + i.taxAmount, 0))
   const shippingTotal = 0 // quoted separately for now — see routes/orders.js
   const grandTotal = round(subtotal + taxTotal + shippingTotal)
+  const commissionTotal = round(items.reduce((s, i) => s + (i.commission ?? 0), 0))
 
-  return { items, subtotal, taxTotal, shippingTotal, grandTotal, issues }
+  // `reseller` and the per-item cost/commission are INTERNAL. Routes that
+  // answer a customer pass the result through customerSafeCart().
+  return {
+    items, subtotal, taxTotal, shippingTotal, grandTotal, issues,
+    reseller: commissionTotal > 0 || items.some((i) => i.commission !== null) ? reseller : null,
+    commissionTotal,
+  }
 }
 
 /** Unused option groups map export kept for potential reuse by admin tooling. */

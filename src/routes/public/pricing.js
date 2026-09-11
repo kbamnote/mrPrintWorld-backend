@@ -7,6 +7,13 @@ import { validate } from '../../middleware/validate.js'
 import { asyncHandler, ApiError } from '../../utils/ApiError.js'
 import { calculatePrice } from '../../services/pricing/resolvePrice.js'
 import { resolvePricingContext, buildVisibilityFilter } from '../../services/pricing/resolveOverride.js'
+import {
+  resolveResellerFor,
+  loadMarkups,
+  markupFor,
+  priceForReferred,
+  storeNameOf,
+} from '../../services/reseller.js'
 
 export const publicPricingRouter = Router()
 
@@ -103,12 +110,22 @@ publicPricingRouter.post(
         .filter(Boolean)
     }
 
-    const result = calculatePrice({
-      product,
-      tierCode: tierCode ?? 'B2C',
-      override,
-      input: { quantity, width, height, selections: resolvedSelections },
-    })
+    const input = { quantity, width, height, selections: resolvedSelections }
+
+    // A reseller's customer sees the reseller's price — and only the price.
+    const reseller = await resolveResellerFor(req.user)
+    if (reseller) {
+      const markups = await loadMarkups(reseller._id, [product._id])
+      const sale = await priceForReferred({
+        reseller,
+        product,
+        input,
+        markupPercent: markupFor(reseller, product._id, markups),
+      })
+      if (sale) return res.json({ ok: true, data: { ...sale.priced, soldBy: storeNameOf(reseller) } })
+    }
+
+    const result = calculatePrice({ product, tierCode: tierCode ?? 'B2C', override, input })
 
     res.json({ ok: true, data: result })
   }),

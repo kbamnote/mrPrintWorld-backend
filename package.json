@@ -18,7 +18,8 @@
     "seed:new": "node scripts/seedNewProducts.js",
     "seed:prices": "node scripts/seedDummyPrices.js",
     "test:images": "node scripts/testImageRoundTrip.js",
-    "seed:demo": "node scripts/seedDemo.js"
+    "seed:demo": "node scripts/seedDemo.js",
+    "test:reseller": "node scripts/testReseller.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

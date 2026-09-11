@@ -85,6 +85,8 @@ adminOrdersRouter.patch(
     }
 
     order.status = status
+    // The first delivery starts a reseller's 7-day commission clock.
+    if (status === 'DELIVERED' && !order.deliveredAt) order.deliveredAt = new Date()
     order.pushTimeline(status, req.user._id, note ?? null)
     await order.save()
 

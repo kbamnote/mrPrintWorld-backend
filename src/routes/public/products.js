@@ -8,6 +8,7 @@ import { asyncHandler, ApiError } from '../../utils/ApiError.js'
 import { resolveTierCode } from '../../services/pricing/resolvePrice.js'
 import { buildVisibilityFilter } from '../../services/pricing/resolveOverride.js'
 import { publicProductCard, publicProductDetail, publicOptionGroup } from '../../services/serializers.js'
+import { resolveResellerFor } from '../../services/reseller.js'
 
 export const publicProductsRouter = Router()
 
@@ -24,7 +25,11 @@ export const publicProductsRouter = Router()
  */
 async function tierContext(req) {
   const tierCode = await resolveTierCode(req.user)
-  return { tierCode, showPrice: Boolean(req.user) }
+  // A reseller's customer is charged the reseller's price, which this
+  // tier-based "from" figure would contradict — so they do not get one. The
+  // product page asks the calculator, which prices them correctly.
+  const hidePrice = Boolean(await resolveResellerFor(req.user))
+  return { tierCode, showPrice: Boolean(req.user), hidePrice }
 }
 
 const listQuery = z
@@ -42,7 +47,7 @@ publicProductsRouter.get(
   validate({ query: listQuery }),
   asyncHandler(async (req, res) => {
     const { category, featured, search, page, limit } = req.validatedQuery
-    const { tierCode, showPrice } = await tierContext(req)
+    const { tierCode, showPrice, hidePrice } = await tierContext(req)
 
     // Query filter, never a response filter — includes per-organization
     // product access, so a restricted corporate account never even loads a
@@ -80,7 +85,7 @@ publicProductsRouter.get(
 
     res.json({
       ok: true,
-      data: items.map((p) => publicProductCard(p, { tierCode, showPrice })),
+      data: items.map((p) => publicProductCard(p, { tierCode, showPrice, hidePrice })),
       meta: { page, limit, total, pages: Math.ceil(total / limit) },
     })
   }),
@@ -109,7 +114,7 @@ publicProductsRouter.get(
   '/:slug',
   validate({ params: z.object({ slug: z.string().trim().min(1).max(160) }).strict() }),
   asyncHandler(async (req, res) => {
-    const { tierCode, showPrice } = await tierContext(req)
+    const { tierCode, showPrice, hidePrice } = await tierContext(req)
 
     const product = await Product.findOne({
       slug: req.validatedParams.slug,
@@ -138,7 +143,7 @@ publicProductsRouter.get(
 
     res.json({
       ok: true,
-      data: publicProductDetail(product, { tierCode, showPrice, optionGroups }),
+      data: publicProductDetail(product, { tierCode, showPrice, hidePrice, optionGroups }),
     })
   }),
 )

@@ -12,6 +12,7 @@ import {
   verifyPaymentSignature,
 } from '../services/payments.js'
 import { env } from '../config/env.js'
+import { customerSafeCart, customerSafeOrder } from '../services/reseller.js'
 
 export const ordersRouter = Router()
 
@@ -59,7 +60,7 @@ ordersRouter.post(
   validate({ body: z.object({ lines: z.array(cartLine).max(50).default([]) }).strict() }),
   asyncHandler(async (req, res) => {
     const priced = await priceCart(req.validatedBody.lines, req.user)
-    res.json({ ok: true, data: priced })
+    res.json({ ok: true, data: customerSafeCart(priced) })
   }),
 )
 
@@ -124,6 +125,18 @@ ordersRouter.post(
       billingAddress: billingAddress ?? shippingAddress,
       customerNote,
       status: 'PENDING_PAYMENT',
+      // Reseller sale: who earns, and how much — fixed now, like the prices.
+      ...(priced.reseller
+        ? {
+            reseller: priced.reseller._id,
+            resellerSnapshot: {
+              name: priced.reseller.name,
+              storeName: priced.reseller.reseller?.storeName ?? priced.reseller.name,
+              code: priced.reseller.reseller?.code ?? null,
+            },
+            commissionTotal: priced.commissionTotal,
+          }
+        : {}),
     })
     order.pushTimeline('PENDING_PAYMENT', req.user._id, 'Order created')
 
@@ -270,6 +283,7 @@ ordersRouter.get(
     // loaded and then checked.
     const order = await Order.findOne({ _id: req.validatedParams.id, user: req.user._id }).lean()
     if (!order) throw ApiError.notFound('Order not found')
-    res.json({ ok: true, data: { ...order, id: String(order._id) } })
+    // The reseller's cost and commission are between us and the reseller.
+    res.json({ ok: true, data: { ...customerSafeOrder(order), id: String(order._id) } })
   }),
 )
