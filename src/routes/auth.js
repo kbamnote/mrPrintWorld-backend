@@ -70,7 +70,8 @@ function publicUser(user, tier, seller = null) {
     businessProfile: user.businessProfile ?? null,
     organization: user.organization ? String(user.organization) : null,
     // Whose customer this is — shown as "Sold via …" next to prices.
-    soldBy: seller ? { storeName: storeNameOf(seller) } : null,
+    // The code lets the storefront keep this customer inside that store.
+    soldBy: seller ? { storeName: storeNameOf(seller), code: seller.reseller?.code ?? null } : null,
     // This account's own reseller standing, if it has applied.
     reseller: user.reseller?.status
       ? {
