@@ -52,7 +52,8 @@ const call = (method, path, body, token) =>
 const json = async (res) => (await res.json()).data
 const PASSWORD = 'customer-password-123'
 
-const cat = await Category.findOne({ slug: 'outdoor-signage' }).lean()
+// The suite owns its category, so it never depends on - or disturbs - the live catalogue.
+const cat = (await Category.create({ name: `Test category ${S}`, slug: `test-cat-${S}` })).toObject()
 const product = await Product.create({
   name: `Reseller Board ${S}`,
   slug: `reseller-board-${S}`,
@@ -148,6 +149,55 @@ await test('the reseller dashboard shows cost, customer price and earnings', asy
   assert.equal(row.costFrom, 150)
   assert.equal(row.sellFrom, 165)
   assert.equal(row.earnFrom, 15)
+})
+
+/* ── Quantity bands (visiting cards and the like) ──────────────────────── */
+
+const cards = await Product.create({
+  name: `Visiting Cards ${S}`,
+  slug: `visiting-cards-${S}`,
+  categories: [cat._id], primaryCategory: cat._id, categoryAncestors: cat.ancestors ?? [],
+  pricingModel: 'SLAB', purchaseMode: 'BUY_NOW',
+  pricing: {
+    unit: 'pieces',
+    slabs: [
+      { minQty: 100, maxQty: 199, amounts: { B2C: 250, B2B: 200 } },
+      { minQty: 200, maxQty: null, amounts: { B2C: 450, B2B: 360 } },
+    ],
+  },
+  moq: { qty: 100, unit: 'pieces' },
+  visibility: { b2c: true, b2b: true, corporate: true }, isActive: true,
+})
+
+await test('a slab-priced product offers its quantities, each with a price', async () => {
+  const stray = await login(`${S}-stray@example.com`) // an ordinary retail customer
+  const data = await call('POST', '/api/public/pricing/calculate', { slug: cards.slug, quantity: 100 }, stray).then(json)
+  assert.deepEqual(
+    data.quantityOptions.map((b) => [b.quantity, b.total, b.unitPrice]),
+    [
+      [100, 250, 2.5],
+      [200, 450, 2.25],
+    ],
+    'retail bands, with the per-piece price the customer compares on',
+  )
+})
+
+await test('a reseller’s customer sees the bands at the reseller’s prices', async () => {
+  // Default markup is 50% on the reseller's own cost (200 and 360).
+  const data = await call('POST', '/api/public/pricing/calculate', { slug: cards.slug, quantity: 100 }, customerToken).then(json)
+  assert.deepEqual(
+    data.quantityOptions.map((b) => [b.quantity, b.total]),
+    [
+      [100, 300],
+      [200, 540],
+    ],
+  )
+  assert.ok(!JSON.stringify(data.quantityOptions).includes('200,'), 'no reseller cost in the band list')
+})
+
+await test('a product priced by area has no quantity bands', async () => {
+  const data = await calc()
+  assert.deepEqual(data.quantityOptions, [])
 })
 
 /* ── Cart and order ────────────────────────────────────────────────────── */
@@ -288,6 +338,7 @@ await Order.deleteMany({ reseller: resellerUser._id })
 await Order.deleteMany({ 'customer.email': { $regex: S } })
 await ResellerPrice.deleteMany({ reseller: resellerUser._id })
 await Product.deleteMany({ slug: { $regex: S } })
+await Category.deleteMany({ slug: { $regex: S } })
 await User.deleteMany({ email: { $regex: S } })
 
 server.close()

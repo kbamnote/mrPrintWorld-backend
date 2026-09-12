@@ -48,7 +48,8 @@ const call = (method, path, body, token) =>
   })
 
 // A priced, published product to quote against.
-const cat = await Category.findOne({ slug: 'outdoor-signage' }).lean()
+// The suite owns its category, so it never depends on - or disturbs - the live catalogue.
+const cat = (await Category.create({ name: `Test category ${S}`, slug: `test-cat-${S}` })).toObject()
 const product = await Product.create({
   name: `Tier Test Board ${S}`,
   slug: `tier-test-board-${S}`,
@@ -200,6 +201,7 @@ await test('a rejected applicant keeps working, at retail pricing', async () => 
 
 /* Cleanup */
 await Product.deleteOne({ _id: product._id })
+await Category.deleteMany({ slug: { $regex: S } })
 await User.deleteMany({ email: { $regex: S } })
 
 server.close()

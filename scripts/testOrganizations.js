@@ -47,8 +47,9 @@ const call = (method, path, body, token) =>
     ...(body ? { body: JSON.stringify(body) } : {}),
   })
 
-const cat = await Category.findOne({ slug: 'outdoor-signage' }).lean()
-const otherCat = await Category.findOne({ slug: 'indoor-signage' }).lean()
+// The suite owns its category, so it never depends on - or disturbs - the live catalogue.
+const cat = (await Category.create({ name: `Test category ${S}`, slug: `test-cat-${S}` })).toObject()
+const otherCat = (await Category.create({ name: `Test category two ${S}`, slug: `test-cat2-${S}` })).toObject()
 
 // The ACP board from the brief: B2C 220, B2B 185, CORPORATE 170.
 const acp = await Product.create({
@@ -300,6 +301,7 @@ await test('removing a member drops their contract pricing', async () => {
 /* Cleanup */
 await PriceOverride.deleteMany({ scopeId: { $in: [ambuja._id, reliance._id, ambujaBuyer.user._id, relianceBuyer.user._id] } })
 await Product.deleteMany({ slug: { $regex: S } })
+await Category.deleteMany({ slug: { $regex: S } })
 await User.deleteMany({ email: { $regex: S } })
 await Organization.deleteMany({ slug: { $regex: S } })
 

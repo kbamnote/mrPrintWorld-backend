@@ -112,21 +112,60 @@ publicPricingRouter.post(
 
     const input = { quantity, width, height, selections: resolvedSelections }
 
+    /**
+     * The quantities a slab-priced product is actually sold in — 100, 200,
+     * 500… Sent priced, so the storefront can offer "100 — ₹250 (₹2.50 each)"
+     * in a dropdown instead of asking the customer to guess a number that may
+     * not fall in any band. Empty for everything else.
+     */
+    const slabQuantities = [...(product.pricing?.slabs ?? [])]
+      .map((slab) => slab.minQty)
+      .filter((qty) => Number.isFinite(qty))
+      .sort((a, b) => a - b)
+      .slice(0, 24)
+
     // A reseller's customer sees the reseller's price — and only the price.
     const reseller = await resolveResellerFor(req.user)
     if (reseller) {
       const markups = await loadMarkups(reseller._id, [product._id])
-      const sale = await priceForReferred({
-        reseller,
-        product,
-        input,
-        markupPercent: markupFor(reseller, product._id, markups),
-      })
-      if (sale) return res.json({ ok: true, data: { ...sale.priced, soldBy: storeNameOf(reseller) } })
+      const markupPercent = markupFor(reseller, product._id, markups)
+      // Resolved once and reused for every quantity below.
+      const context = await resolvePricingContext(reseller, product)
+      const sale = await priceForReferred({ reseller, product, input, markupPercent, context })
+
+      if (sale) {
+        const quantityOptions = []
+        for (const qty of slabQuantities) {
+          const band = await priceForReferred({
+            reseller,
+            product,
+            markupPercent,
+            context,
+            input: { ...input, quantity: qty },
+          })
+          if (band) {
+            quantityOptions.push({
+              quantity: qty,
+              total: band.priced.total,
+              unitPrice: band.priced.unitPrice,
+            })
+          }
+        }
+        return res.json({
+          ok: true,
+          data: { ...sale.priced, soldBy: storeNameOf(reseller), quantityOptions },
+        })
+      }
     }
 
     const result = calculatePrice({ product, tierCode: tierCode ?? 'B2C', override, input })
+    const quantityOptions = slabQuantities
+      .map((qty) =>
+        calculatePrice({ product, tierCode: tierCode ?? 'B2C', override, input: { ...input, quantity: qty } }),
+      )
+      .filter((band) => band.quotable)
+      .map((band) => ({ quantity: band.quantity, total: band.total, unitPrice: band.unitPrice }))
 
-    res.json({ ok: true, data: result })
+    res.json({ ok: true, data: { ...result, quantityOptions } })
   }),
 )

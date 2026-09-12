@@ -110,13 +110,16 @@ function describe(product, cost) {
 /**
  * Price one product for a reseller's customer.
  *
+ * @param {object} [context] a pricing context already resolved for this
+ *   reseller and product. Pass it when pricing several quantities of the same
+ *   product, so a price list costs one database lookup rather than one per row.
  * @returns {{ priced, costTotal, commission } | null}
  *   `priced` is safe to send to the customer — it carries no cost-derived
  *   rates. null when the reseller has no cost for this product; the caller
  *   then prices the customer normally, with no commission.
  */
-export async function priceForReferred({ reseller, product, input, markupPercent }) {
-  const { tierCode, override } = await resolvePricingContext(reseller, product)
+export async function priceForReferred({ reseller, product, input, markupPercent, context }) {
+  const { tierCode, override } = context ?? (await resolvePricingContext(reseller, product))
   const cost = calculatePrice({ product, tierCode: tierCode ?? 'B2C', override, input })
   if (!cost.quotable) return null
 

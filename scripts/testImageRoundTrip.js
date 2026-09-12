@@ -43,7 +43,8 @@ const call = (m, p, b) => fetch(base + p, {
   ...(b ? { body: JSON.stringify(b) } : {}),
 })
 
-const cat = await Category.findOne({ slug: 'outdoor-signage' }).lean()
+// The suite owns its category, so it never depends on - or disturbs - the live catalogue.
+const cat = (await Category.create({ name: `Test category ${S}`, slug: `test-cat-${S}` })).toObject()
 let productId
 
 await test('create a product with an image', async () => {
@@ -79,6 +80,7 @@ await test('a stray _id never reaches the stored document', async () => {
 })
 
 await Product.deleteMany({ _id: productId })
+await Category.deleteMany({ slug: { $regex: S } })
 await User.deleteOne({ _id: admin._id })
 server.close()
 await disconnectDatabase()

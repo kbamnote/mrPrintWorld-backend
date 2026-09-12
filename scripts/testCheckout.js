@@ -52,7 +52,8 @@ const call = (method, path, body, token) =>
     ...(body ? { body: JSON.stringify(body) } : {}),
   })
 
-const cat = await Category.findOne({ slug: 'outdoor-signage' }).lean()
+// The suite owns its category, so it never depends on - or disturbs - the live catalogue.
+const cat = (await Category.create({ name: `Test category ${S}`, slug: `test-cat-${S}` })).toObject()
 
 const buyable = await Product.create({
   name: `Buyable Board ${S}`,
@@ -258,6 +259,7 @@ await test('order numbers are unique under concurrency', async () => {
 /* Cleanup */
 await Order.deleteMany({ user: { $in: [alice.user._id, bob.user._id] } })
 await Product.deleteMany({ slug: { $regex: S } })
+await Category.deleteMany({ slug: { $regex: S } })
 await User.deleteMany({ email: { $regex: S } })
 
 server.close()
