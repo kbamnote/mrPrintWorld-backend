@@ -30,6 +30,12 @@ const productOptionSchema = new mongoose.Schema(
      * Maps; the admin write schema validates its shape.
      */
     valueOverrides: { type: mongoose.Schema.Types.Mixed, default: undefined },
+    /**
+     * Choice prices for particular quantity packs, per tier:
+     *   { "2000": { BOTH: { B2C: 350 } } }
+     * Anything left out falls back to valueOverrides, then the library.
+     */
+    packOverrides: { type: mongoose.Schema.Types.Mixed, default: undefined },
   },
   { _id: false },
 )

@@ -164,6 +164,64 @@ await test('the cart charges the product’s own price for the choice', async ()
   assert.equal(data.subtotal, 750)
 })
 
+/* ── Choice prices that change with the quantity pack ──────────────────── */
+
+const packCards = await Product.create({
+  name: `Spec Pack Cards ${S}`,
+  slug: `spec-pack-cards-${S}`,
+  categories: [cat._id], primaryCategory: cat._id, categoryAncestors: cat.ancestors ?? [],
+  pricingModel: 'SLAB', purchaseMode: 'BUY_NOW',
+  pricing: {
+    unit: 'pieces',
+    slabs: [
+      { minQty: 1000, maxQty: 1000, amounts: { B2C: 900, B2B: 700 } },
+      { minQty: 2000, maxQty: 2000, amounts: { B2C: 1600, B2B: 1300 } },
+    ],
+  },
+  options: [{
+    optionGroup: paper._id, order: 0, required: true,
+    // Textured stock: 120 at any quantity, but 260 on the 2,000 pack (retail only).
+    valueOverrides: { TEXTURED: { B2C: 120 } },
+    packOverrides: { 2000: { TEXTURED: { B2C: 260 } } },
+  }],
+  visibility: { b2c: true, b2b: true, corporate: true }, isActive: true,
+})
+
+const priceAt = (slug, quantity, selections) =>
+  call('POST', '/api/public/pricing/calculate', { slug, quantity, selections }, token).then(json)
+const textured = [{ group: paper.code, value: 'TEXTURED' }]
+
+await test('a pack with no price of its own uses the all-quantities price', async () => {
+  assert.equal((await priceAt(packCards.slug, 1000, textured)).total, 1020, '900 pack + 120')
+})
+
+await test('a pack with its own price for the choice charges that', async () => {
+  assert.equal((await priceAt(packCards.slug, 2000, textured)).total, 1860, '1600 pack + 260')
+})
+
+await test('the quantity dropdown prices every pack with that pack’s own choice price', async () => {
+  const data = await priceAt(packCards.slug, 1000, textured)
+  assert.deepEqual(
+    data.quantityOptions.map((b) => [b.quantity, b.total]),
+    [
+      [1000, 1020],
+      [2000, 1860],
+    ],
+  )
+})
+
+await test('a customer type with no pack price falls back through to the library', async () => {
+  await User.updateOne({ _id: customer._id }, { $set: { resolvedTier: 'B2B' } })
+  assert.equal((await priceAt(packCards.slug, 2000, textured)).total, 1360, '1300 trade pack + library trade 60')
+  await User.updateOne({ _id: customer._id }, { $set: { resolvedTier: 'B2C' } })
+})
+
+await test('the cart charges the pack’s own price for the choice', async () => {
+  const lines = [{ slug: packCards.slug, quantity: 2000, selections: textured }]
+  const data = await json(await call('POST', '/api/cart/price', { lines }, token))
+  assert.equal(data.subtotal, 1860)
+})
+
 await Product.deleteMany({ slug: { $regex: S } })
 await OptionGroup.deleteMany({ _id: paper._id })
 await Category.deleteMany({ slug: { $regex: S } })

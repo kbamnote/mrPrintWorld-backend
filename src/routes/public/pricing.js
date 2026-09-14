@@ -6,7 +6,7 @@ import { OptionGroup } from '../../models/OptionGroup.js'
 import { validate } from '../../middleware/validate.js'
 import { asyncHandler, ApiError } from '../../utils/ApiError.js'
 import { calculatePrice } from '../../services/pricing/resolvePrice.js'
-import { effectiveDelta } from '../../services/pricing/optionDelta.js'
+import { effectiveDelta, packKeyFor } from '../../services/pricing/optionDelta.js'
 import { resolvePricingContext, buildVisibilityFilter } from '../../services/pricing/resolveOverride.js'
 import {
   resolveResellerFor,
@@ -83,7 +83,7 @@ publicPricingRouter.post(
     // Translate {group, value} codes into the priced option values. Selections
     // referencing an option the product does not offer are ignored rather than
     // trusted — the client cannot invent a discount by inventing an option.
-    let resolvedSelections = []
+    let matched = [] // { group, value, po } for each valid selection
     let missingRequired = []
 
     if (product.options?.length) {
@@ -95,19 +95,13 @@ publicPricingRouter.post(
       // choice it prices differently from the library.
       const productOptionByGroupId = new Map(product.options.map((po) => [String(po.optionGroup), po]))
 
-      resolvedSelections = selections
+      matched = selections
         .map((sel) => {
           const group = byCode.get(sel.group)
           if (!group) return null
           const value = (group.values ?? []).find((v) => v.code === String(sel.value))
           if (!value) return null
-
-          return {
-            code: group.code,
-            label: `${group.label}: ${value.label}`,
-            deltaType: value.deltaType,
-            priceDelta: effectiveDelta(value, productOptionByGroupId.get(String(group._id))),
-          }
+          return { group, value, po: productOptionByGroupId.get(String(group._id)) }
         })
         .filter(Boolean)
 
@@ -116,9 +110,22 @@ publicPricingRouter.post(
       missingRequired = product.options
         .filter((po) => po.required)
         .map((po) => ({ po, group: byId.get(String(po.optionGroup)) }))
-        .filter(({ group }) => group && !resolvedSelections.some((sel) => sel.code === group.code))
+        .filter(({ group }) => group && !matched.some((m) => m.group.code === group.code))
         .map(({ po, group }) => ({ code: group.code, label: po.labelOverride ?? group.label }))
     }
+
+    /**
+     * The chosen options priced for a given quantity. A product sold in packs
+     * can charge differently for the same choice at 1,000 and at 2,000, so
+     * the pack price list below re-prices the options for every pack.
+     */
+    const selectionsAt = (qty) =>
+      matched.map(({ group, value, po }) => ({
+        code: group.code,
+        label: `${group.label}: ${value.label}`,
+        deltaType: value.deltaType,
+        priceDelta: effectiveDelta(value, po, packKeyFor(product, qty)),
+      }))
 
     if (missingRequired.length) {
       return res.json({
@@ -137,7 +144,7 @@ publicPricingRouter.post(
       })
     }
 
-    const input = { quantity, width, height, selections: resolvedSelections }
+    const input = { quantity, width, height, selections: selectionsAt(quantity) }
 
     /**
      * The quantities a slab-priced product is actually sold in — 100, 200,
@@ -168,7 +175,7 @@ publicPricingRouter.post(
             product,
             markupPercent,
             context,
-            input: { ...input, quantity: qty },
+            input: { ...input, quantity: qty, selections: selectionsAt(qty) },
           })
           if (band) {
             quantityOptions.push({
@@ -188,7 +195,12 @@ publicPricingRouter.post(
     const result = calculatePrice({ product, tierCode: tierCode ?? 'B2C', override, input })
     const quantityOptions = slabQuantities
       .map((qty) =>
-        calculatePrice({ product, tierCode: tierCode ?? 'B2C', override, input: { ...input, quantity: qty } }),
+        calculatePrice({
+          product,
+          tierCode: tierCode ?? 'B2C',
+          override,
+          input: { ...input, quantity: qty, selections: selectionsAt(qty) },
+        }),
       )
       .filter((band) => band.quotable)
       .map((band) => ({ quantity: band.quantity, total: band.total, unitPrice: band.unitPrice }))

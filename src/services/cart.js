@@ -1,7 +1,7 @@
 import { Product } from '../models/Product.js'
 import { OptionGroup } from '../models/OptionGroup.js'
 import { calculatePrice } from './pricing/resolvePrice.js'
-import { effectiveDelta } from './pricing/optionDelta.js'
+import { effectiveDelta, packKeyFor } from './pricing/optionDelta.js'
 import { resolvePricingContext, buildVisibilityFilter } from './pricing/resolveOverride.js'
 import { resolveResellerFor, loadMarkups, markupFor, priceForReferred } from './reseller.js'
 
@@ -99,7 +99,8 @@ export async function priceCart(lines, user) {
       resolvedSelections.push({
         label: `${group.label}: ${value.label}`,
         deltaType: value.deltaType,
-        priceDelta: effectiveDelta(value, productOptionByGroupId.get(String(group._id))),
+        // Priced for this line's quantity: a pack can charge its own price for the choice.
+        priceDelta: effectiveDelta(value, productOptionByGroupId.get(String(group._id)), packKeyFor(product, qty)),
       })
       selectionSnapshot.push({
         group: group.code,

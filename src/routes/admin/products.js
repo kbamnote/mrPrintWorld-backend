@@ -87,6 +87,13 @@ const productBody = z
             deltaOverrides: tierAmountMap.optional(),
             // This product's own price for individual choices: { BOTH: { B2C: 250 } }.
             valueOverrides: z.record(z.string().trim().min(1).max(60), tierAmountMap).optional(),
+            // Choice prices for particular packs: { "2000": { BOTH: { B2C: 350 } } }.
+            packOverrides: z
+              .record(
+                z.string().regex(/^\d{1,9}$/, 'Pack key must be a quantity'),
+                z.record(z.string().trim().min(1).max(60), tierAmountMap),
+              )
+              .optional(),
           })
           .strict(),
       )
