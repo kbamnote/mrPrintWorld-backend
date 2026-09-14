@@ -284,6 +284,101 @@ await test('the cart refuses a choice on a pack that does not offer it', async (
   assert.match(data.issues[0].message, /Textured is not available in packs of 2,000/)
 })
 
+/* ── A field priced by another field's choice (sides by size) ──────────── */
+
+const sizeGroup = await OptionGroup.create({
+  code: `SIZE_${String(Date.now()).slice(-6)}`,
+  label: 'Size',
+  inputType: 'DROPDOWN',
+  values: [{ code: 'A5', label: 'A5' }, { code: 'A4', label: 'A4' }],
+})
+const sidesGroup = await OptionGroup.create({
+  code: `SIDES_${String(Date.now()).slice(-6)}`,
+  label: 'Printing sides',
+  inputType: 'RADIO',
+  values: [
+    { code: 'SINGLE', label: 'Single side' },
+    { code: 'BOTH', label: 'Both sides', priceDelta: { B2C: 400 } },
+  ],
+})
+
+const flyers = await Product.create({
+  name: `Spec Flyers ${S}`,
+  slug: `spec-flyers-${S}`,
+  categories: [cat._id], primaryCategory: cat._id, categoryAncestors: cat.ancestors ?? [],
+  pricingModel: 'SLAB', purchaseMode: 'BUY_NOW',
+  pricing: {
+    unit: 'pieces',
+    slabs: [
+      { minQty: 1000, maxQty: 1000, amounts: { B2C: 1000 } },
+      { minQty: 2000, maxQty: 2000, amounts: { B2C: 1800 } },
+    ],
+  },
+  options: [
+    { optionGroup: sizeGroup._id, order: 0 },
+    {
+      optionGroup: sidesGroup._id,
+      order: 1,
+      dependsOn: sizeGroup._id,
+      // Both sides: +300 on A5, +500 on A4, and +850 on A4 in the 2,000 pack.
+      driverPrices: {
+        A5: { every: { BOTH: { B2C: 300 } } },
+        A4: { every: { BOTH: { B2C: 500 } }, packs: { 2000: { BOTH: { B2C: 850 } } } },
+      },
+    },
+  ],
+  visibility: { b2c: true, b2b: true, corporate: true }, isActive: true,
+})
+
+const sized = (size, side) => [
+  { group: sizeGroup.code, value: size },
+  { group: sidesGroup.code, value: side },
+]
+
+await test('a choice can cost a different amount for each size', async () => {
+  assert.equal((await priceAt(flyers.slug, 1000, sized('A5', 'BOTH'))).total, 1300, '1000 + 300 on A5')
+  assert.equal((await priceAt(flyers.slug, 1000, sized('A4', 'BOTH'))).total, 1500, '1000 + 500 on A4')
+})
+
+await test('and a different amount again on a pack for that size', async () => {
+  assert.equal((await priceAt(flyers.slug, 2000, sized('A4', 'BOTH'))).total, 2650, '1800 + 850 on A4 at 2,000')
+  assert.equal((await priceAt(flyers.slug, 2000, sized('A5', 'BOTH'))).total, 2100, '1800 + A5 every-quantity 300')
+})
+
+await test('with no size chosen, the field’s own price applies', async () => {
+  const data = await priceAt(flyers.slug, 1000, [{ group: sidesGroup.code, value: 'BOTH' }])
+  assert.equal(data.total, 1400, '1000 + library 400')
+})
+
+await test('the quantity list prices each pack for the chosen size', async () => {
+  const data = await priceAt(flyers.slug, 1000, sized('A4', 'BOTH'))
+  assert.deepEqual(
+    data.quantityOptions.map((b) => [b.quantity, b.total]),
+    [
+      [1000, 1500],
+      [2000, 2650],
+    ],
+  )
+})
+
+await test('the cart prices by size whatever order the choices arrive in', async () => {
+  const lines = [
+    {
+      slug: flyers.slug,
+      quantity: 2000,
+      // Sides listed BEFORE size: the size must still be found.
+      selections: [
+        { group: sidesGroup.code, value: 'BOTH' },
+        { group: sizeGroup.code, value: 'A4' },
+      ],
+    },
+  ]
+  const data = await json(await call('POST', '/api/cart/price', { lines }, token))
+  assert.equal(data.subtotal, 2650)
+})
+
+await OptionGroup.deleteMany({ _id: { $in: [sizeGroup._id, sidesGroup._id] } })
+
 await Product.deleteMany({ slug: { $regex: S } })
 await OptionGroup.deleteMany({ _id: paper._id })
 await Category.deleteMany({ slug: { $regex: S } })

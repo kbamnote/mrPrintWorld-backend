@@ -42,6 +42,16 @@ const productOptionSchema = new mongoose.Schema(
      * The same for every customer type. Refused in pricing and the cart.
      */
     packUnavailable: { type: mongoose.Schema.Types.Mixed, default: undefined },
+    /**
+     * Another field of this product whose choice this field's prices depend
+     * on — e.g. printing sides priced by Size.
+     */
+    dependsOn: { type: mongoose.Schema.Types.ObjectId, ref: 'OptionGroup', default: null },
+    /**
+     * Prices per choice of that field, per tier:
+     *   { A4: { every: { BOTH: { B2C: 500 } }, packs: { "2000": { BOTH: { B2C: 850 } } } } }
+     */
+    driverPrices: { type: mongoose.Schema.Types.Mixed, default: undefined },
   },
   { _id: false },
 )

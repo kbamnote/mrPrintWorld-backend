@@ -101,10 +101,44 @@ const productBody = z
                 z.array(z.string().trim().min(1).max(60)).max(80),
               )
               .optional(),
+            // Another field of this product whose choice this field's prices depend on.
+            dependsOn: objectId.nullable().optional(),
+            // Prices per choice of that field:
+            // { A4: { every: { BOTH: { B2C: 500 } }, packs: { "2000": { BOTH: { B2C: 850 } } } } }
+            driverPrices: z
+              .record(
+                z.string().trim().min(1).max(60),
+                z
+                  .object({
+                    every: z.record(z.string().trim().min(1).max(60), tierAmountMap).optional(),
+                    packs: z
+                      .record(
+                        z.string().regex(/^\d{1,9}$/, 'Pack key must be a quantity'),
+                        z.record(z.string().trim().min(1).max(60), tierAmountMap),
+                      )
+                      .optional(),
+                  })
+                  .strict(),
+              )
+              .optional(),
           })
           .strict(),
       )
       .max(30)
+      // A field can only depend on ANOTHER field of this same product.
+      .superRefine((options, ctx) => {
+        const attached = new Set(options.map((o) => String(o.optionGroup)))
+        options.forEach((o, i) => {
+          if (!o.dependsOn) return
+          if (String(o.dependsOn) === String(o.optionGroup) || !attached.has(String(o.dependsOn))) {
+            ctx.addIssue({
+              code: 'custom',
+              path: [i, 'dependsOn'],
+              message: 'A field can only depend on another field of this product',
+            })
+          }
+        })
+      })
       .optional(),
     visibility: z
       .object({ b2c: z.boolean(), b2b: z.boolean(), corporate: z.boolean() })

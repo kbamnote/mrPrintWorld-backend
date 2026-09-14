@@ -125,6 +125,13 @@ publicPricingRouter.post(
         .map(({ po, group }) => ({ code: group.code, label: po.labelOverride ?? group.label }))
     }
 
+    /** The choice made in the field this one's prices depend on (e.g. Size), if any. */
+    const driverChoiceFor = (po) => {
+      if (!po?.dependsOn) return null
+      const driver = matched.find((m) => String(m.group._id) === String(po.dependsOn))
+      return driver ? driver.value.code : null
+    }
+
     /**
      * The chosen options priced for a given quantity. A product sold in packs
      * can charge differently for the same choice at 1,000 and at 2,000, so
@@ -135,7 +142,7 @@ publicPricingRouter.post(
         code: group.code,
         label: `${group.label}: ${value.label}`,
         deltaType: value.deltaType,
-        priceDelta: effectiveDelta(value, po, packKeyFor(product, qty)),
+        priceDelta: effectiveDelta(value, po, packKeyFor(product, qty), driverChoiceFor(po)),
       }))
 
     /** Whether every chosen option is offered on a given pack. */

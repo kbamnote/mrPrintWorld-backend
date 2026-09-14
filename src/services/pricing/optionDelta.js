@@ -34,12 +34,22 @@ export function packKeyFor(product, quantity) {
   return slab ? String(slab.minQty) : null
 }
 
-export function effectiveDelta(value, productOption, packKey = null) {
+/**
+ * @param driverCode  when this field's prices depend on another field of the
+ *   product (Product.options[].dependsOn — e.g. printing sides by Size), the
+ *   choice made in that field. Its prices come first, tier by tier:
+ *   that choice on this pack, then that choice at every quantity, then
+ *   everything above.
+ */
+export function effectiveDelta(value, productOption, packKey = null, driverCode = null) {
+  const byDriver = driverCode ? productOption?.driverPrices?.[driverCode] : null
   return {
     ...plain(value?.priceDelta),
     ...plain(productOption?.deltaOverrides),
     ...plain(productOption?.valueOverrides?.[value?.code]),
     ...plain(packKey ? productOption?.packOverrides?.[packKey]?.[value?.code] : null),
+    ...plain(byDriver?.every?.[value?.code]),
+    ...plain(packKey ? byDriver?.packs?.[packKey]?.[value?.code] : null),
   }
 }
 

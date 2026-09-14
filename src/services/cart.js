@@ -88,6 +88,7 @@ export async function priceCart(lines, user) {
     const resolvedSelections = []
     const selectionSnapshot = []
     let blockedChoice = null
+    const chosen = [] // { group, value } — priced once every choice on the line is known
 
     for (const sel of line.selections ?? []) {
       const group = groupByCode.get(sel.group)
@@ -103,17 +104,25 @@ export async function priceCart(lines, user) {
         continue
       }
 
-      resolvedSelections.push({
-        label: `${group.label}: ${value.label}`,
-        deltaType: value.deltaType,
-        // Priced for this line's quantity: a pack can charge its own price for the choice.
-        priceDelta: effectiveDelta(value, productOptionByGroupId.get(String(group._id)), packKeyFor(product, qty)),
-      })
+      chosen.push({ group, value })
       selectionSnapshot.push({
         group: group.code,
         groupLabel: group.label,
         value: value.code,
         valueLabel: value.label,
+      })
+    }
+
+    // Priced after the loop, not inside it: a field can price by another
+    // field's choice (printing sides by Size), and that choice may come later
+    // in the list. Also priced for this line's quantity pack.
+    for (const { group, value } of chosen) {
+      const po = productOptionByGroupId.get(String(group._id))
+      const driver = po?.dependsOn ? chosen.find((c) => String(c.group._id) === String(po.dependsOn)) : null
+      resolvedSelections.push({
+        label: `${group.label}: ${value.label}`,
+        deltaType: value.deltaType,
+        priceDelta: effectiveDelta(value, po, packKeyFor(product, qty), driver ? driver.value.code : null),
       })
     }
 
