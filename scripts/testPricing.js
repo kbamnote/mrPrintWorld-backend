@@ -135,6 +135,32 @@ test('SLAB — quantity below the lowest band returns quote, not the lowest pric
   assert.match(r.reason, /No price band/)
 })
 
+/* ── SLAB as fixed packs — 500, 1,000, 1,500 ───────────────────────────── */
+const packCards = {
+  slug: 'pack-cards',
+  pricingModel: 'SLAB',
+  purchaseMode: 'BUY_NOW',
+  pricing: {
+    unit: 'pieces',
+    slabs: [
+      { minQty: 500, maxQty: 500, amounts: { B2C: 900, B2B: 750 } },
+      { minQty: 1000, maxQty: 1000, amounts: { B2C: 1500, B2B: 1250 } },
+      { minQty: 1500, maxQty: 1500, amounts: { B2C: 2000, B2B: 1700 } },
+    ],
+  },
+}
+
+test('PACKS — an exact pack quantity takes that pack price', () => {
+  const r = calculatePrice({ product: packCards, tierCode: 'B2B', input: { quantity: 1000 } })
+  assert.equal(r.total, 1250)
+})
+
+test('PACKS — a quantity between packs is not priced, and names the packs on offer', () => {
+  const r = calculatePrice({ product: packCards, tierCode: 'B2C', input: { quantity: 750 } })
+  assert.equal(r.quotable, false)
+  assert.match(r.reason, /packs of 500, 1,000, 1,500/)
+})
+
 /* ── QUOTE_ONLY ────────────────────────────────────────────────────────── */
 test('QUOTE_ONLY — never produces a number', () => {
   const r = calculatePrice({

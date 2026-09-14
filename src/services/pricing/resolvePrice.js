@@ -178,7 +178,18 @@ export function calculatePrice({ product, tierCode, input = {}, override = null 
     case 'SLAB': {
       if (!pricing.slabs?.length) return quoteOnly('No quantity slabs configured')
       const slab = findSlab(pricing.slabs, quantity)
-      if (!slab) return quoteOnly(`No price band covers a quantity of ${quantity}`)
+      if (!slab) {
+        // Sold in fixed packs (500, 1000…) rather than ranges: name the packs,
+        // so a customer who asked for 750 knows exactly what they can order.
+        if (pricing.slabs.every((s) => s.maxQty === s.minQty)) {
+          const packs = pricing.slabs
+            .map((s) => s.minQty)
+            .sort((a, b) => a - b)
+            .map((qty) => qty.toLocaleString('en-IN'))
+          return quoteOnly(`Available in packs of ${packs.join(', ')}`)
+        }
+        return quoteOnly(`No price band covers a quantity of ${quantity}`)
+      }
       const amt = readTierValue(slab.amounts, tierCode)
       if (amt === undefined) return quoteOnly('No price configured for your account type')
       const negSlab = applyOverride(amt, override, (t) => readTierValue(slab.amounts, t))
