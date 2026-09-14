@@ -6,7 +6,12 @@ import { OptionGroup } from '../../models/OptionGroup.js'
 import { validate } from '../../middleware/validate.js'
 import { asyncHandler, ApiError } from '../../utils/ApiError.js'
 import { calculatePrice } from '../../services/pricing/resolvePrice.js'
-import { effectiveDelta, packKeyFor } from '../../services/pricing/optionDelta.js'
+import {
+  effectiveDelta,
+  packKeyFor,
+  isChoiceAvailable,
+  fieldOfferedOnPack,
+} from '../../services/pricing/optionDelta.js'
 import { resolvePricingContext, buildVisibilityFilter } from '../../services/pricing/resolveOverride.js'
 import {
   resolveResellerFor,
@@ -110,7 +115,13 @@ publicPricingRouter.post(
       missingRequired = product.options
         .filter((po) => po.required)
         .map((po) => ({ po, group: byId.get(String(po.optionGroup)) }))
-        .filter(({ group }) => group && !matched.some((m) => m.group.code === group.code))
+        // A field with nothing offered on this pack is hidden there, so not demanded.
+        .filter(
+          ({ po, group }) =>
+            group &&
+            fieldOfferedOnPack(po, packKeyFor(product, quantity), group) &&
+            !matched.some((m) => m.group.code === group.code),
+        )
         .map(({ po, group }) => ({ code: group.code, label: po.labelOverride ?? group.label }))
     }
 
@@ -127,6 +138,12 @@ publicPricingRouter.post(
         priceDelta: effectiveDelta(value, po, packKeyFor(product, qty)),
       }))
 
+    /** Whether every chosen option is offered on a given pack. */
+    const selectionsAvailableAt = (qty) => {
+      const pack = packKeyFor(product, qty)
+      return matched.every(({ po, value }) => isChoiceAvailable(po, pack, value.code))
+    }
+
     if (missingRequired.length) {
       return res.json({
         ok: true,
@@ -140,6 +157,27 @@ publicPricingRouter.post(
           tier: tierCode ?? 'B2C',
           breakdown: [],
           reason: `Choose ${missingRequired.map((m) => m.label).join(', ')} to see the price`,
+        },
+      })
+    }
+
+    // A choice this product does not offer on the chosen pack has no price.
+    // The storefront never lets a customer reach this; the API refuses anyway.
+    if (!selectionsAvailableAt(quantity)) {
+      const pack = packKeyFor(product, quantity)
+      const blocked = matched.find(({ po, value }) => !isChoiceAvailable(po, pack, value.code))
+      return res.json({
+        ok: true,
+        data: {
+          quotable: false,
+          requiresQuote: false,
+          total: null,
+          unitPrice: null,
+          currency: 'INR',
+          tier: tierCode ?? 'B2C',
+          breakdown: [],
+          unavailableSelection: { group: blocked.group.code, value: blocked.value.code },
+          reason: `${blocked.value.label} is not available in packs of ${Number(pack).toLocaleString('en-IN')}`,
         },
       })
     }
@@ -170,6 +208,10 @@ publicPricingRouter.post(
       if (sale) {
         const quantityOptions = []
         for (const qty of slabQuantities) {
+          if (!selectionsAvailableAt(qty)) {
+            quantityOptions.push({ quantity: qty, available: false, total: null, unitPrice: null })
+            continue
+          }
           const band = await priceForReferred({
             reseller,
             product,
@@ -180,6 +222,7 @@ publicPricingRouter.post(
           if (band) {
             quantityOptions.push({
               quantity: qty,
+              available: true,
               total: band.priced.total,
               unitPrice: band.priced.unitPrice,
             })
@@ -194,16 +237,20 @@ publicPricingRouter.post(
 
     const result = calculatePrice({ product, tierCode: tierCode ?? 'B2C', override, input })
     const quantityOptions = slabQuantities
-      .map((qty) =>
-        calculatePrice({
+      .map((qty) => {
+        // Listed but not choosable: the storefront shows it greyed out.
+        if (!selectionsAvailableAt(qty)) return { quantity: qty, available: false, total: null, unitPrice: null }
+        const band = calculatePrice({
           product,
           tierCode: tierCode ?? 'B2C',
           override,
           input: { ...input, quantity: qty, selections: selectionsAt(qty) },
-        }),
-      )
-      .filter((band) => band.quotable)
-      .map((band) => ({ quantity: band.quantity, total: band.total, unitPrice: band.unitPrice }))
+        })
+        return band.quotable
+          ? { quantity: band.quantity, available: true, total: band.total, unitPrice: band.unitPrice }
+          : null
+      })
+      .filter(Boolean)
 
     res.json({ ok: true, data: { ...result, quantityOptions } })
   }),

@@ -94,6 +94,13 @@ const productBody = z
                 z.record(z.string().trim().min(1).max(60), tierAmountMap),
               )
               .optional(),
+            // Choices not offered on particular packs: { "2000": ["TEXTURED"] }.
+            packUnavailable: z
+              .record(
+                z.string().regex(/^\d{1,9}$/, 'Pack key must be a quantity'),
+                z.array(z.string().trim().min(1).max(60)).max(80),
+              )
+              .optional(),
           })
           .strict(),
       )

@@ -1,7 +1,7 @@
 import { Product } from '../models/Product.js'
 import { OptionGroup } from '../models/OptionGroup.js'
 import { calculatePrice } from './pricing/resolvePrice.js'
-import { effectiveDelta, packKeyFor } from './pricing/optionDelta.js'
+import { effectiveDelta, packKeyFor, isChoiceAvailable, fieldOfferedOnPack } from './pricing/optionDelta.js'
 import { resolvePricingContext, buildVisibilityFilter } from './pricing/resolveOverride.js'
 import { resolveResellerFor, loadMarkups, markupFor, priceForReferred } from './reseller.js'
 
@@ -87,6 +87,7 @@ export async function priceCart(lines, user) {
     const productOptionByGroupId = new Map((product.options ?? []).map((po) => [String(po.optionGroup), po]))
     const resolvedSelections = []
     const selectionSnapshot = []
+    let blockedChoice = null
 
     for (const sel of line.selections ?? []) {
       const group = groupByCode.get(sel.group)
@@ -95,6 +96,12 @@ export async function priceCart(lines, user) {
       if (!(product.options ?? []).some((po) => String(po.optionGroup) === String(group._id))) continue
       const value = (group.values ?? []).find((v) => v.code === String(sel.value))
       if (!value) continue
+
+      // A choice this product does not offer on the line's pack cannot be bought.
+      if (!isChoiceAvailable(productOptionByGroupId.get(String(group._id)), packKeyFor(product, qty), value.code)) {
+        blockedChoice = `${value.label} is not available in packs of ${qty.toLocaleString('en-IN')}`
+        continue
+      }
 
       resolvedSelections.push({
         label: `${group.label}: ${value.label}`,
@@ -110,6 +117,11 @@ export async function priceCart(lines, user) {
       })
     }
 
+    if (blockedChoice) {
+      issues.push({ slug: line.slug, message: `${product.name}: ${blockedChoice}` })
+      continue
+    }
+
     // A required specification left unchosen cannot be priced — the customer
     // would be buying something we cannot make. Enforced HERE, on the server,
     // because a client can simply omit the field.
@@ -117,7 +129,12 @@ export async function priceCart(lines, user) {
       .filter((po) => po.required)
       .filter((po) => {
         const group = groupById.get(String(po.optionGroup))
-        return group && !selectionSnapshot.some((sel) => sel.group === group.code)
+        // A field with nothing offered on this pack is hidden there, so not demanded.
+        return (
+          group &&
+          fieldOfferedOnPack(po, packKeyFor(product, qty), group) &&
+          !selectionSnapshot.some((sel) => sel.group === group.code)
+        )
       })
       .map((po) => po.labelOverride ?? groupById.get(String(po.optionGroup))?.label)
       .filter(Boolean)

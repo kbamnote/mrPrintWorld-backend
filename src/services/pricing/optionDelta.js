@@ -42,3 +42,24 @@ export function effectiveDelta(value, productOption, packKey = null) {
     ...plain(packKey ? productOption?.packOverrides?.[packKey]?.[value?.code] : null),
   }
 }
+
+/* ── Choices not offered on some packs ──────────────────────────────────── */
+
+/**
+ * Whether this product offers a choice on a given pack. Marked per product in
+ * Product.options[].packUnavailable: { "2000": ["TEXTURED"] }. The same for
+ * every customer type — availability is not a pricing question.
+ */
+export function isChoiceAvailable(productOption, packKey, code) {
+  if (!packKey) return true
+  const blocked = productOption?.packUnavailable?.[packKey]
+  return !(Array.isArray(blocked) && blocked.includes(String(code)))
+}
+
+/**
+ * Whether a field has anything left to choose on a pack. A field with every
+ * choice unavailable is not shown for that pack, so it cannot be required there.
+ */
+export function fieldOfferedOnPack(productOption, packKey, group) {
+  return (group?.values ?? []).some((v) => v.isActive !== false && isChoiceAvailable(productOption, packKey, v.code))
+}

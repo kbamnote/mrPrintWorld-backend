@@ -222,6 +222,68 @@ await test('the cart charges the pack’s own price for the choice', async () =>
   assert.equal(data.subtotal, 1860)
 })
 
+/* ── Choices not offered on some packs ─────────────────────────────────── */
+
+const availCards = await Product.create({
+  name: `Spec Avail Cards ${S}`,
+  slug: `spec-avail-cards-${S}`,
+  categories: [cat._id], primaryCategory: cat._id, categoryAncestors: cat.ancestors ?? [],
+  pricingModel: 'SLAB', purchaseMode: 'BUY_NOW',
+  pricing: {
+    unit: 'pieces',
+    slabs: [
+      { minQty: 1000, maxQty: 1000, amounts: { B2C: 900 } },
+      { minQty: 2000, maxQty: 2000, amounts: { B2C: 1600 } },
+      { minQty: 3000, maxQty: 3000, amounts: { B2C: 2200 } },
+    ],
+  },
+  options: [{
+    optionGroup: paper._id, order: 0, required: true,
+    // Textured is not made in 2,000s; the 3,000 pack offers no paper choice at all.
+    packUnavailable: { 2000: ['TEXTURED'], 3000: ['ART_CARD', 'TEXTURED'] },
+  }],
+  visibility: { b2c: true, b2b: true, corporate: true }, isActive: true,
+})
+
+await test('a choice not offered on a pack has no price there, and says why', async () => {
+  const data = await priceAt(availCards.slug, 2000, textured)
+  assert.equal(data.quotable, false)
+  assert.match(data.reason, /Textured is not available in packs of 2,000/)
+})
+
+await test('the quantity list marks the packs that do not offer the chosen option', async () => {
+  const data = await priceAt(availCards.slug, 1000, textured)
+  assert.deepEqual(
+    data.quantityOptions.map((b) => [b.quantity, b.available]),
+    [
+      [1000, true],
+      [2000, false],
+      [3000, false],
+    ],
+  )
+  assert.equal(data.quantityOptions[0].total, 1000, '900 pack + library 100 for textured')
+})
+
+await test('a required field with no choice offered on a pack is not demanded there', async () => {
+  const data = await priceAt(availCards.slug, 3000, [])
+  assert.equal(data.quotable, true)
+  assert.equal(data.total, 2200)
+})
+
+await test('the product page tells the storefront which packs each choice is missing from', async () => {
+  const detail = await json(await call('GET', `/api/public/products/${availCards.slug}`, null, token))
+  const missingFrom = Object.fromEntries(detail.options[0].values.map((v) => [v.code, v.unavailableFor ?? []]))
+  assert.deepEqual(missingFrom.TEXTURED, [2000, 3000])
+  assert.deepEqual(missingFrom.ART_CARD, [3000])
+})
+
+await test('the cart refuses a choice on a pack that does not offer it', async () => {
+  const lines = [{ slug: availCards.slug, quantity: 2000, selections: textured }]
+  const data = await json(await call('POST', '/api/cart/price', { lines }, token))
+  assert.equal(data.items.length, 0)
+  assert.match(data.issues[0].message, /Textured is not available in packs of 2,000/)
+})
+
 await Product.deleteMany({ slug: { $regex: S } })
 await OptionGroup.deleteMany({ _id: paper._id })
 await Category.deleteMany({ slug: { $regex: S } })

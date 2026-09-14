@@ -36,6 +36,12 @@ const productOptionSchema = new mongoose.Schema(
      * Anything left out falls back to valueOverrides, then the library.
      */
     packOverrides: { type: mongoose.Schema.Types.Mixed, default: undefined },
+    /**
+     * Choices this product does not offer on particular packs:
+     *   { "2000": ["TEXTURED"] }
+     * The same for every customer type. Refused in pricing and the cart.
+     */
+    packUnavailable: { type: mongoose.Schema.Types.Mixed, default: undefined },
   },
   { _id: false },
 )

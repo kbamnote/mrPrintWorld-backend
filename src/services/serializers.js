@@ -128,6 +128,14 @@ export function publicOptionGroup(group, productOption = {}) {
     values: (group.values ?? [])
       .filter((v) => v.isActive !== false)
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-      .map((v) => ({ code: v.code, label: v.label })),
+      .map((v) => {
+        // The packs this product does not offer the choice on, so the
+        // storefront can hide it there and block switching to them.
+        const unavailableFor = Object.entries(productOption?.packUnavailable ?? {})
+          .filter(([, codes]) => Array.isArray(codes) && codes.includes(v.code))
+          .map(([pack]) => Number(pack))
+          .sort((a, b) => a - b)
+        return { code: v.code, label: v.label, ...(unavailableFor.length ? { unavailableFor } : {}) }
+      }),
   }
 }
