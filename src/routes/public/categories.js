@@ -13,14 +13,10 @@ export const publicCategoriesRouter = Router()
  * Ids of every category holding at least one product THIS viewer can see —
  * directly, or anywhere beneath it.
  *
- * The storefront only lists categories that lead somewhere. An empty category
- * (just created, or whose products are all still drafts) stays out of the menu
- * until the admin publishes something into it, instead of appearing as a
- * button that opens "Nothing here yet".
- *
- * It uses the same visibility filter as the product list, so a corporate
- * account restricted to certain products never sees a category it would find
- * empty.
+ * Categories are listed whether or not they hold products — the admin decides
+ * what is visible with "Show on website". This only marks which ones are
+ * empty, so the sitemap can keep empty pages away from search engines. It
+ * uses the same visibility filter as the product list.
  */
 async function populatedCategoryIds(user) {
   const filter = await buildVisibilityFilter(user)
@@ -34,7 +30,7 @@ async function populatedCategoryIds(user) {
 /**
  * Assemble a flat list into a nested tree in one pass.
  *
- * A node whose parent is missing from the list (hidden, or empty) is dropped
+ * A node whose parent is missing from the list (hidden by the admin) is dropped
  * rather than promoted — otherwise hiding "Signage" would scatter its
  * subcategories across the top level of the menu.
  */
@@ -71,11 +67,11 @@ publicCategoriesRouter.get(
       populatedCategoryIds(req.user),
     ])
 
+    // Every category the admin has made visible is listed, products or not.
+    const annotated = flat.map((c) => ({ ...c, hasProducts: populated.has(String(c._id)) }))
+
     res.set('Cache-Control', 'private, no-cache')
-    res.json({
-      ok: true,
-      data: buildTree(flat.filter((c) => populated.has(String(c._id)))).map(publicCategory),
-    })
+    res.json({ ok: true, data: buildTree(annotated).map(publicCategory) })
   }),
 )
 
@@ -87,13 +83,12 @@ publicCategoriesRouter.get(
     const category = await Category.findOne({ slug: req.validatedParams.slug, isActive: true }).lean()
     if (!category) throw ApiError.notFound('Category not found')
 
-    const [ancestors, children, populated] = await Promise.all([
+    const [ancestors, children] = await Promise.all([
       Category.find({ _id: { $in: category.ancestors ?? [] } }).select('name slug').lean(),
       Category.find({ parent: category._id, isActive: true })
         .select('name slug order image')
         .sort({ order: 1, name: 1 })
         .lean(),
-      populatedCategoryIds(req.user),
     ])
 
     // Order the trail root → parent; the $in query returns no guaranteed order.
@@ -106,7 +101,7 @@ publicCategoriesRouter.get(
       data: {
         ...publicCategory(category),
         breadcrumb: trail.map((a) => ({ id: String(a._id), name: a.name, slug: a.slug })),
-        children: children.filter((c) => populated.has(String(c._id))).map(publicCategory),
+        children: children.map(publicCategory),
       },
     })
   }),

@@ -20,7 +20,8 @@
     "test:images": "node scripts/testImageRoundTrip.js",
     "seed:demo": "node scripts/seedDemo.js",
     "test:reseller": "node scripts/testReseller.js",
-    "test:options": "node scripts/testProductOptions.js"
+    "test:options": "node scripts/testProductOptions.js",
+    "test:categories": "node scripts/testCategories.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

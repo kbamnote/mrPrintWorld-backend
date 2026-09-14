@@ -26,6 +26,9 @@ export function publicCategory(cat) {
     parent: cat.parent ? String(cat.parent) : null,
     order: cat.order ?? 0,
     seo: { title: cat.seo?.title ?? null, description: cat.seo?.description ?? null },
+    // Whether anything the caller can buy sits in this branch. Shoppers see
+    // every visible category; the sitemap uses this to skip empty ones.
+    ...(cat.hasProducts !== undefined ? { hasProducts: Boolean(cat.hasProducts) } : {}),
     ...(cat.children ? { children: cat.children.map(publicCategory) } : {}),
   }
 }
