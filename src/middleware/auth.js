@@ -86,6 +86,12 @@ export function requireAdmin(req, _res, next) {
   if (!['ADMIN', 'STAFF'].includes(req.user.role)) {
     return next(ApiError.forbidden('Administrator access required'))
   }
+  // Staff can create and edit everything, but never delete. Every removal in
+  // the admin API is a DELETE request, so one check here covers all of them —
+  // including any delete route added later.
+  if (req.user.role === 'STAFF' && req.method === 'DELETE') {
+    return next(ApiError.forbidden('Staff accounts cannot delete. Ask an administrator.'))
+  }
   next()
 }
 

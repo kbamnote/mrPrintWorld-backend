@@ -26,9 +26,17 @@ async function run() {
   const email = arg('--email')?.toLowerCase().trim()
   const name = arg('--name')?.trim() ?? 'Administrator'
   const provided = arg('--password')
+  // STAFF can create and edit everything in the admin panel but cannot delete.
+  const role = (arg('--role') ?? 'ADMIN').toUpperCase()
 
   if (!email) {
-    console.error('Usage: npm run seed:admin -- --email you@example.com [--name "Your Name"] [--password "..."]')
+    console.error(
+      'Usage: npm run seed:admin -- --email you@example.com [--name "Your Name"] [--password "..."] [--role ADMIN|STAFF]',
+    )
+    process.exit(1)
+  }
+  if (!['ADMIN', 'STAFF'].includes(role)) {
+    console.error('--role must be ADMIN or STAFF.')
     process.exit(1)
   }
   if (provided && provided.length < 12) {
@@ -51,7 +59,7 @@ async function run() {
   const user = new User({
     email,
     name,
-    role: 'ADMIN',
+    role,
     accountType: 'B2C',
     status: 'ACTIVE',
     resolvedTier: 'B2C',
@@ -60,7 +68,7 @@ async function run() {
   await user.setPassword(password)
   await user.save()
 
-  console.log(`\n  Administrator created`)
+  console.log(`\n  ${role === 'STAFF' ? 'Staff account (no delete)' : 'Administrator'} created`)
   console.log(`  email:    ${email}`)
   if (!provided) {
     console.log(`  password: ${password}`)
