@@ -23,6 +23,13 @@ const productOptionSchema = new mongoose.Schema(
     /** Per-product overrides — label only, or per-value price deltas. */
     labelOverride: { type: String, trim: true, default: null },
     deltaOverrides: { type: Map, of: Number, default: undefined },
+    /**
+     * This product's own price for individual choices, per tier:
+     *   { BOTH: { B2C: 250, B2B: 200 } }
+     * A tier left out uses the library price. Mixed rather than a Map of
+     * Maps; the admin write schema validates its shape.
+     */
+    valueOverrides: { type: mongoose.Schema.Types.Mixed, default: undefined },
   },
   { _id: false },
 )

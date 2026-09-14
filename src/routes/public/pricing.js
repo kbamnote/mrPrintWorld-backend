@@ -6,6 +6,7 @@ import { OptionGroup } from '../../models/OptionGroup.js'
 import { validate } from '../../middleware/validate.js'
 import { asyncHandler, ApiError } from '../../utils/ApiError.js'
 import { calculatePrice } from '../../services/pricing/resolvePrice.js'
+import { effectiveDelta } from '../../services/pricing/optionDelta.js'
 import { resolvePricingContext, buildVisibilityFilter } from '../../services/pricing/resolveOverride.js'
 import {
   resolveResellerFor,
@@ -90,9 +91,9 @@ publicPricingRouter.post(
       const groups = await OptionGroup.find({ _id: { $in: ids }, isActive: true }).lean()
       const byCode = new Map(groups.map((g) => [g.code, g]))
       const byId = new Map(groups.map((g) => [String(g._id), g]))
-      const overridesByGroupId = new Map(
-        product.options.map((po) => [String(po.optionGroup), po.deltaOverrides]),
-      )
+      // The product's own settings for each attached field, including any
+      // choice it prices differently from the library.
+      const productOptionByGroupId = new Map(product.options.map((po) => [String(po.optionGroup), po]))
 
       resolvedSelections = selections
         .map((sel) => {
@@ -101,14 +102,11 @@ publicPricingRouter.post(
           const value = (group.values ?? []).find((v) => v.code === String(sel.value))
           if (!value) return null
 
-          // Named distinctly: `override` in this file now means a NEGOTIATED
-          // RATE, and shadowing it here would be a trap for the next reader.
-          const deltaOverride = overridesByGroupId.get(String(group._id))
           return {
             code: group.code,
             label: `${group.label}: ${value.label}`,
             deltaType: value.deltaType,
-            priceDelta: deltaOverride ?? value.priceDelta,
+            priceDelta: effectiveDelta(value, productOptionByGroupId.get(String(group._id))),
           }
         })
         .filter(Boolean)

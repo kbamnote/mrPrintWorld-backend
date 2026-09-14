@@ -1,6 +1,7 @@
 import { Product } from '../models/Product.js'
 import { OptionGroup } from '../models/OptionGroup.js'
 import { calculatePrice } from './pricing/resolvePrice.js'
+import { effectiveDelta } from './pricing/optionDelta.js'
 import { resolvePricingContext, buildVisibilityFilter } from './pricing/resolveOverride.js'
 import { resolveResellerFor, loadMarkups, markupFor, priceForReferred } from './reseller.js'
 
@@ -83,9 +84,7 @@ export async function priceCart(lines, user) {
 
     // Translate selection codes into priced option values. Anything the
     // product does not actually offer is dropped rather than trusted.
-    const overridesByGroupId = new Map(
-      (product.options ?? []).map((po) => [String(po.optionGroup), po.deltaOverrides]),
-    )
+    const productOptionByGroupId = new Map((product.options ?? []).map((po) => [String(po.optionGroup), po]))
     const resolvedSelections = []
     const selectionSnapshot = []
 
@@ -100,7 +99,7 @@ export async function priceCart(lines, user) {
       resolvedSelections.push({
         label: `${group.label}: ${value.label}`,
         deltaType: value.deltaType,
-        priceDelta: overridesByGroupId.get(String(group._id)) ?? value.priceDelta,
+        priceDelta: effectiveDelta(value, productOptionByGroupId.get(String(group._id))),
       })
       selectionSnapshot.push({
         group: group.code,

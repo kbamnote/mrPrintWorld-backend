@@ -85,6 +85,8 @@ const productBody = z
             required: z.boolean().optional(),
             labelOverride: z.string().trim().max(120).nullable().optional(),
             deltaOverrides: tierAmountMap.optional(),
+            // This product's own price for individual choices: { BOTH: { B2C: 250 } }.
+            valueOverrides: z.record(z.string().trim().min(1).max(60), tierAmountMap).optional(),
           })
           .strict(),
       )

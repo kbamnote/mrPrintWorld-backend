@@ -123,6 +123,47 @@ await test('the cart prices the chosen specification', async () => {
   assert.equal(data.items[0].selections[0].valueLabel, 'Textured', 'recorded for production')
 })
 
+/* ── Different prices for the same field on different products ─────────── */
+
+const letterhead = await Product.create({
+  name: `Spec Letterhead ${S}`,
+  slug: `spec-letterhead-${S}`,
+  categories: [cat._id], primaryCategory: cat._id, categoryAncestors: cat.ancestors ?? [],
+  pricingModel: 'FIXED', purchaseMode: 'BUY_NOW',
+  pricing: { unit: 'pack', amounts: { B2C: 500, B2B: 400 } },
+  // Same field as the cards, but textured stock costs 250 here, for retail only.
+  options: [{ optionGroup: paper._id, order: 0, required: true, valueOverrides: { TEXTURED: { B2C: 250 } } }],
+  visibility: { b2c: true, b2b: true, corporate: true }, isActive: true,
+})
+
+const priceOf = (slug, selections) =>
+  call('POST', '/api/public/pricing/calculate', { slug, quantity: 1, selections }, token).then(json)
+
+await test('the same choice can cost more on one product than on another', async () => {
+  const cards = await priceOf(product.slug, [{ group: paper.code, value: 'TEXTURED' }])
+  const letter = await priceOf(letterhead.slug, [{ group: paper.code, value: 'TEXTURED' }])
+  assert.equal(cards.total, 600, 'the cards use the library surcharge of 100')
+  assert.equal(letter.total, 750, 'the letterhead charges its own 250 for the same choice')
+})
+
+await test('a customer type left blank on a product falls back to the library price', async () => {
+  await User.updateOne({ _id: customer._id }, { $set: { resolvedTier: 'B2B' } })
+  const letter = await priceOf(letterhead.slug, [{ group: paper.code, value: 'TEXTURED' }])
+  assert.equal(letter.total, 460, '400 trade base + the library trade surcharge of 60')
+  await User.updateOne({ _id: customer._id }, { $set: { resolvedTier: 'B2C' } })
+})
+
+await test('a choice not priced differently keeps its library price on that product', async () => {
+  const letter = await priceOf(letterhead.slug, [{ group: paper.code, value: 'ART_CARD' }])
+  assert.equal(letter.total, 500)
+})
+
+await test('the cart charges the product’s own price for the choice', async () => {
+  const lines = [{ slug: letterhead.slug, quantity: 1, selections: [{ group: paper.code, value: 'TEXTURED' }] }]
+  const data = await json(await call('POST', '/api/cart/price', { lines }, token))
+  assert.equal(data.subtotal, 750)
+})
+
 await Product.deleteMany({ slug: { $regex: S } })
 await OptionGroup.deleteMany({ _id: paper._id })
 await Category.deleteMany({ slug: { $regex: S } })
