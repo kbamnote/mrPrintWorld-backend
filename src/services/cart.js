@@ -51,6 +51,7 @@ export async function priceCart(lines, user) {
     ? await OptionGroup.find({ _id: { $in: groupIds }, isActive: true }).lean()
     : []
   const groupByCode = new Map(groups.map((g) => [g.code, g]))
+  const groupById = new Map(groups.map((g) => [String(g._id), g]))
 
   // A reseller's customer is priced at the reseller's price — resolved once
   // for the whole cart.
@@ -107,6 +108,23 @@ export async function priceCart(lines, user) {
         value: value.code,
         valueLabel: value.label,
       })
+    }
+
+    // A required specification left unchosen cannot be priced — the customer
+    // would be buying something we cannot make. Enforced HERE, on the server,
+    // because a client can simply omit the field.
+    const missing = (product.options ?? [])
+      .filter((po) => po.required)
+      .filter((po) => {
+        const group = groupById.get(String(po.optionGroup))
+        return group && !selectionSnapshot.some((sel) => sel.group === group.code)
+      })
+      .map((po) => po.labelOverride ?? groupById.get(String(po.optionGroup))?.label)
+      .filter(Boolean)
+
+    if (missing.length) {
+      issues.push({ slug: line.slug, message: `${product.name}: choose ${missing.join(', ')}` })
+      continue
     }
 
     const input = { quantity: qty, width: line.width, height: line.height, selections: resolvedSelections }

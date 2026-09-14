@@ -192,7 +192,13 @@ await test('a reseller’s customer sees the bands at the reseller’s prices', 
       [200, 540],
     ],
   )
-  assert.ok(!JSON.stringify(data.quantityOptions).includes('200,'), 'no reseller cost in the band list')
+  // Compare prices, not text: "200" is also a legitimate band QUANTITY, so a
+  // string search for the reseller's ₹200 cost would match it by accident.
+  const resellerCost = { 100: 200, 200: 360 }
+  for (const band of data.quantityOptions) {
+    assert.ok(band.total > resellerCost[band.quantity], `band ${band.quantity} must not show the reseller's cost`)
+    assert.ok(!('resellerCost' in band) && !('commission' in band), 'no reseller economics on a band')
+  }
 })
 
 await test('a product priced by area has no quantity bands', async () => {

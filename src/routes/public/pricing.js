@@ -83,10 +83,13 @@ publicPricingRouter.post(
     // referencing an option the product does not offer are ignored rather than
     // trusted — the client cannot invent a discount by inventing an option.
     let resolvedSelections = []
-    if (selections.length && product.options?.length) {
+    let missingRequired = []
+
+    if (product.options?.length) {
       const ids = product.options.map((o) => o.optionGroup)
       const groups = await OptionGroup.find({ _id: { $in: ids }, isActive: true }).lean()
       const byCode = new Map(groups.map((g) => [g.code, g]))
+      const byId = new Map(groups.map((g) => [String(g._id), g]))
       const overridesByGroupId = new Map(
         product.options.map((po) => [String(po.optionGroup), po.deltaOverrides]),
       )
@@ -102,12 +105,38 @@ publicPricingRouter.post(
           // RATE, and shadowing it here would be a trap for the next reader.
           const deltaOverride = overridesByGroupId.get(String(group._id))
           return {
+            code: group.code,
             label: `${group.label}: ${value.label}`,
             deltaType: value.deltaType,
             priceDelta: deltaOverride ?? value.priceDelta,
           }
         })
         .filter(Boolean)
+
+      // A specification marked required must be chosen before there is a
+      // price — the surcharge for it is part of the figure.
+      missingRequired = product.options
+        .filter((po) => po.required)
+        .map((po) => ({ po, group: byId.get(String(po.optionGroup)) }))
+        .filter(({ group }) => group && !resolvedSelections.some((sel) => sel.code === group.code))
+        .map(({ po, group }) => ({ code: group.code, label: po.labelOverride ?? group.label }))
+    }
+
+    if (missingRequired.length) {
+      return res.json({
+        ok: true,
+        data: {
+          quotable: false,
+          requiresQuote: false,
+          requiresSelection: missingRequired,
+          total: null,
+          unitPrice: null,
+          currency: 'INR',
+          tier: tierCode ?? 'B2C',
+          breakdown: [],
+          reason: `Choose ${missingRequired.map((m) => m.label).join(', ')} to see the price`,
+        },
+      })
     }
 
     const input = { quantity, width, height, selections: resolvedSelections }
