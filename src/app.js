@@ -32,6 +32,9 @@ export function createApp() {
      This router uses express.raw() internally. */
   app.use('/api/webhooks', webhooksRouter)
 
+  // A bulk Excel upload can carry up to 500 products with descriptions, so
+  // that one route gets a larger body; the parser below then skips it.
+  app.use('/api/admin/products/bulk', express.json({ limit: '8mb' }))
   app.use(express.json({ limit: '1mb' }))
   app.use(express.urlencoded({ extended: true, limit: '1mb' }))
 

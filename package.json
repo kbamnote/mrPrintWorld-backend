@@ -21,7 +21,8 @@
     "seed:demo": "node scripts/seedDemo.js",
     "test:reseller": "node scripts/testReseller.js",
     "test:options": "node scripts/testProductOptions.js",
-    "test:categories": "node scripts/testCategories.js"
+    "test:categories": "node scripts/testCategories.js",
+    "test:bulk": "node scripts/testBulkProducts.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

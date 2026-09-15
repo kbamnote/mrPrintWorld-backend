@@ -8,6 +8,7 @@ import { validate } from '../../middleware/validate.js'
 import { asyncHandler, ApiError } from '../../utils/ApiError.js'
 import { objectId, tierAmountMap } from '../../schemas/common.js'
 import { calculatePrice } from '../../services/pricing/resolvePrice.js'
+import { bulkUpsertProducts } from '../../services/bulkProducts.js'
 
 export const adminProductsRouter = Router()
 
@@ -272,6 +273,59 @@ adminProductsRouter.post(
     await product.save()
 
     res.status(201).json({ ok: true, data: product.toJSON() })
+  }),
+)
+
+/** One product row from the bulk Excel upload. A missing key means "leave as it is". */
+const bulkList = z.array(z.string().trim().min(1).max(300)).max(40).optional()
+const bulkRow = z
+  .object({
+    row: z.number().int().min(1), // spreadsheet row number, echoed back in the results
+    name: z.string().trim().min(1).max(200),
+    category: objectId.optional(),
+    shortDescription: z.string().trim().max(400).optional(),
+    description: z.string().trim().max(8000).optional(),
+    specifications: bulkList,
+    applications: bulkList,
+    customization: bulkList,
+    materials: bulkList,
+    sizes: bulkList,
+    unit: z.string().trim().max(24).optional(),
+    hsnCode: z.string().trim().max(20).optional(),
+    taxPercent: z.number().min(0).max(100).optional(),
+    isActive: z.boolean().optional(),
+    seoTitle: z.string().trim().max(200).optional(),
+    seoDescription: z.string().trim().max(400).optional(),
+    packs: z
+      .array(z.object({ qty: z.number().int().min(1).max(999_999_999), amounts: tierAmountMap }).strict())
+      .max(10)
+      .optional(),
+  })
+  .strict()
+
+/**
+ * Bulk upload from Excel, started from a category. Rows naming a product
+ * already in that category update it; the rest are created. Send
+ * dryRun:true first to see what each row will do, then again to import.
+ */
+adminProductsRouter.post(
+  '/bulk',
+  validate({
+    body: z
+      .object({
+        category: objectId,
+        dryRun: z.boolean().default(true),
+        rows: z.array(bulkRow).min(1).max(500),
+      })
+      .strict(),
+  }),
+  asyncHandler(async (req, res) => {
+    const { category, dryRun, rows } = req.validatedBody
+    await assertTierCodesExist({ slabs: rows.flatMap((r) => (r.packs ?? []).map((p) => ({ amounts: p.amounts }))) })
+
+    const result = await bulkUpsertProducts({ categoryId: category, rows, dryRun, userId: req.user._id })
+    if (!result) throw ApiError.notFound('Category not found')
+    res.json({ ok: true, data: result })
   }),
 )
 
