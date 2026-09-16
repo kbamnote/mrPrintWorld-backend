@@ -105,6 +105,9 @@ const productSchema = new mongoose.Schema(
         alt: { type: String, trim: true },
         isPrimary: { type: Boolean, default: false },
         order: { type: Number, default: 0 },
+        // The link a bulk-uploaded photo was copied from, so uploading the
+        // same sheet again does not copy it a second time.
+        sourceUrl: { type: String, trim: true },
         // No _id on image subdocuments. Mongoose adds one by default, the
         // admin form loads it, sends it back on save, and the strict write
         // schema then rejects it as an unrecognised key — which made saving a

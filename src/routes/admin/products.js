@@ -52,6 +52,8 @@ const productBody = z
             alt: z.string().max(200).optional(),
             isPrimary: z.boolean().optional(),
             order: z.number().int().optional(),
+            // The link a bulk-uploaded photo was copied from, so it is not copied twice.
+            sourceUrl: z.string().max(2000).optional(),
             // Accepted and discarded. Documents saved before images got
             // `_id: false` still carry one, and a round-trip edit must not
             // fail because of a field the server itself put there.
@@ -281,6 +283,8 @@ const bulkList = z.array(z.string().trim().min(1).max(300)).max(40).optional()
 const bulkRow = z
   .object({
     row: z.number().int().min(1), // spreadsheet row number, echoed back in the results
+    // Named only on the Options sheet: changes an existing product's fields, never creates one.
+    optionsOnly: z.literal(true).optional(),
     name: z.string().trim().min(1).max(200),
     category: objectId.optional(),
     shortDescription: z.string().trim().max(400).optional(),
@@ -300,8 +304,25 @@ const bulkRow = z
       .array(z.object({ qty: z.number().int().min(1).max(999_999_999), amounts: tierAmountMap }).strict())
       .max(10)
       .optional(),
+    // Photo links, added to the product's photos (see services/remoteImage.js).
+    images: z.array(z.string().trim().min(1).max(2000)).max(10).optional(),
+    // Fields from the Options sheet — the same shape the product form saves.
+    options: productBody.shape.options,
   })
   .strict()
+
+/** Every tier-keyed price map in a bulk row: packs and option prices. */
+const tierMapsOf = (row) => [
+  ...(row.packs ?? []).map((p) => p.amounts),
+  ...(row.options ?? []).flatMap((o) => [
+    ...Object.values(o.valueOverrides ?? {}),
+    ...Object.values(o.packOverrides ?? {}).flatMap((byChoice) => Object.values(byChoice)),
+    ...Object.values(o.driverPrices ?? {}).flatMap((d) => [
+      ...Object.values(d.every ?? {}),
+      ...Object.values(d.packs ?? {}).flatMap((byChoice) => Object.values(byChoice)),
+    ]),
+  ]),
+]
 
 /**
  * Bulk upload from Excel, started from a category. Rows naming a product
@@ -321,7 +342,7 @@ adminProductsRouter.post(
   }),
   asyncHandler(async (req, res) => {
     const { category, dryRun, rows } = req.validatedBody
-    await assertTierCodesExist({ slabs: rows.flatMap((r) => (r.packs ?? []).map((p) => ({ amounts: p.amounts }))) })
+    await assertTierCodesExist({ slabs: rows.flatMap(tierMapsOf).map((amounts) => ({ amounts })) })
 
     const result = await bulkUpsertProducts({ categoryId: category, rows, dryRun, userId: req.user._id })
     if (!result) throw ApiError.notFound('Category not found')
