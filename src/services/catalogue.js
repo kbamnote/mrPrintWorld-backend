@@ -30,7 +30,7 @@ const qty = (n) => Number(n).toLocaleString('en-IN')
 /**
  * What a quantity is counted in. Many products carry a number here rather
  * than a word (a rate typed into "Sold in"), which would print as "500 11" —
- * so anything that is not a word is left off.
+ * anything that is not a word reads "500 qty" instead.
  */
 const unitOf = (product) => {
   const unit = String(product.pricing?.unit ?? '').trim()
@@ -88,7 +88,7 @@ export async function buildCatalogue(reseller, storeUrl) {
       const unit = unitOf(product)
       for (const quantity of quantities) {
         const sale = await priceForReferred({ reseller, product, markupPercent, context, input: { quantity } })
-        if (sale) rows.push({ label: unit ? `${qty(quantity)} ${unit}` : qty(quantity), price: sale.priced.total })
+        if (sale) rows.push({ label: `${qty(quantity)} ${unit ?? 'qty'}`, price: sale.priced.total })
       }
     } else if (!quoted && product.pricingModel === 'FIXED') {
       const sale = await priceForReferred({ reseller, product, markupPercent, context, input: { quantity: 1 } })
