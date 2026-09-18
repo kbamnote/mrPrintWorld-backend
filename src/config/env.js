@@ -28,6 +28,10 @@ const schema = z.object({
   // Comma-separated origin allowlist. No wildcard in production.
   CORS_ORIGINS: z.string().default('http://localhost:5173,http://localhost:5185'),
 
+  // The customer-facing site, used in links we print or send — a reseller's
+  // store link inside their catalogue PDF, for one.
+  PUBLIC_SITE_URL: z.string().default('https://www.mrprintworld.com'),
+
   // Cloudinary — optional at boot so the API runs before credentials exist.
   // The upload route checks `isCloudinaryConfigured` and 503s cleanly instead
   // of throwing an unhandled error deep inside the SDK.

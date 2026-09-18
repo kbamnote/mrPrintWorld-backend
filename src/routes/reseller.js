@@ -9,6 +9,10 @@ import { validate } from '../middleware/validate.js'
 import { asyncHandler, ApiError } from '../utils/ApiError.js'
 import { objectId } from '../schemas/common.js'
 import { resolveDisplayPrice } from '../services/pricing/resolvePrice.js'
+import { buildCatalogue } from '../services/catalogue.js'
+import { renderCataloguePdf } from '../services/cataloguePdf.js'
+import { uploadFile, removeFile } from '../services/remoteImage.js'
+import { env } from '../config/env.js'
 import { loadMarkups, commissionState, COMMISSION_HOLD_DAYS } from '../services/reseller.js'
 
 /**
@@ -202,6 +206,75 @@ resellerRouter.get(
         }
       }),
       meta: { page, limit, total, pages: Math.ceil(total / limit) },
+    })
+  }),
+)
+
+/* ── Catalogue PDF ─────────────────────────────────────────────────────── */
+
+const storeLinkFor = (reseller) =>
+  `${(env.PUBLIC_SITE_URL ?? 'https://www.mrprintworld.com').replace(/\/+$/, '')}/store/${reseller.reseller?.code ?? ''}`
+
+/** The catalogue this reseller last built, if any. */
+resellerRouter.get(
+  '/catalogue',
+  asyncHandler(async (req, res) => {
+    requireReseller(req)
+    const c = req.user.reseller?.catalogue ?? {}
+    res.json({
+      ok: true,
+      data: { url: c.url ?? null, builtAt: c.builtAt ?? null, productCount: c.productCount ?? 0 },
+    })
+  }),
+)
+
+/**
+ * Build the catalogue, or hand back the last one when nothing it prints has
+ * changed. A new product, a new price or a changed markup all change the
+ * fingerprint, so the reseller always shares a current price list.
+ */
+resellerRouter.post(
+  '/catalogue',
+  asyncHandler(async (req, res) => {
+    requireReseller(req)
+    const me = req.user
+    const catalogue = await buildCatalogue(me, storeLinkFor(me))
+    const current = me.reseller?.catalogue ?? {}
+
+    if (current.url && current.fingerprint === catalogue.fingerprint) {
+      return res.json({
+        ok: true,
+        data: { url: current.url, builtAt: current.builtAt, productCount: current.productCount, rebuilt: false },
+      })
+    }
+
+    const pdf = await renderCataloguePdf(catalogue)
+    const stored = await uploadFile(pdf, {
+      folder: 'catalogues',
+      publicId: `${me.reseller?.code ?? me._id}-${catalogue.fingerprint.slice(0, 10)}.pdf`,
+    })
+
+    const builtAt = new Date()
+    await User.updateOne(
+      { _id: me._id },
+      {
+        $set: {
+          'reseller.catalogue': {
+            url: stored.url,
+            publicId: stored.publicId,
+            fingerprint: catalogue.fingerprint,
+            productCount: catalogue.productCount,
+            builtAt,
+          },
+        },
+      },
+    )
+    // The one it replaces is no longer linked anywhere.
+    if (current.publicId && current.publicId !== stored.publicId) await removeFile(current.publicId)
+
+    res.json({
+      ok: true,
+      data: { url: stored.url, builtAt, productCount: catalogue.productCount, rebuilt: true },
     })
   }),
 )

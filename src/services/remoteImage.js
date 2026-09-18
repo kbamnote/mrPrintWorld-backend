@@ -75,3 +75,30 @@ export async function removeImportedImages(publicIds) {
   if (!isCloudinaryConfigured || !publicIds.length) return
   await Promise.allSettled(publicIds.map((id) => cloudinary.uploader.destroy(id)))
 }
+
+/**
+ * Stores a generated file (a reseller's catalogue PDF) and returns a link
+ * anyone can open — it is meant to be forwarded on WhatsApp.
+ */
+export async function uploadFile(buffer, { folder, publicId, contentType = 'application/pdf' }) {
+  if (!isCloudinaryConfigured) throw new Error('File storage is not configured on the server')
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: `${env.CLOUDINARY_FOLDER}/${folder}`,
+        public_id: publicId,
+        resource_type: 'raw',
+        overwrite: true,
+        content_type: contentType,
+      },
+      (err, out) => (err ? reject(new Error(err.message ?? 'Could not store the file')) : resolve({ url: out.secure_url, publicId: out.public_id })),
+    )
+    stream.end(buffer)
+  })
+}
+
+/** Removes a stored file — used when a catalogue is replaced by a newer one. */
+export async function removeFile(publicId) {
+  if (!isCloudinaryConfigured || !publicId) return
+  await Promise.allSettled([cloudinary.uploader.destroy(publicId, { resource_type: 'raw' })])
+}

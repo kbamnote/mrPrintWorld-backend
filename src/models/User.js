@@ -75,6 +75,17 @@ const userSchema = new mongoose.Schema(
       storeName: { type: String, trim: true, maxlength: 80 },
       /** null = customers pay our retail price; a number = % on top of the reseller's own cost. */
       defaultMarkupPercent: { type: Number, min: 0, max: 1000, default: null },
+      /**
+       * Their price-list PDF, rebuilt only when what it prints changes — the
+       * fingerprint is a hash of every product, price and markup in it.
+       */
+      catalogue: {
+        url: { type: String, trim: true, default: null },
+        publicId: { type: String, trim: true, default: null },
+        fingerprint: { type: String, trim: true, default: null },
+        productCount: { type: Number, default: 0 },
+        builtAt: { type: Date, default: null },
+      },
       appliedAt: { type: Date, default: null },
       approvedAt: { type: Date, default: null },
       approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
