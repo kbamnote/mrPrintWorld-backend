@@ -3,7 +3,7 @@ import { Product } from '../models/Product.js'
 import { Category } from '../models/Category.js'
 import { loadMarkups, markupFor, priceForReferred, storeNameOf } from './reseller.js'
 import { resolveDisplayPrice } from './pricing/resolvePrice.js'
-import { resolvePricingContext } from './pricing/resolveOverride.js'
+import { pricingContextFor } from './pricing/resolveOverride.js'
 
 /**
  * A reseller's own price list: every product their customers can buy, at the
@@ -20,7 +20,8 @@ import { resolvePricingContext } from './pricing/resolveOverride.js'
  * produces a new catalogue and nothing else does.
  */
 
-const MAX_PRODUCTS = 300
+/** A ceiling, not a target: every live product should fit in one catalogue. */
+const MAX_PRODUCTS = 800
 const MAX_PACKS_SHOWN = 6
 
 const round = (n) => Math.round((n + Number.EPSILON) * 100) / 100
@@ -59,11 +60,13 @@ export async function buildCatalogue(reseller, storeUrl) {
     : []
   const categoryName = new Map(categories.map((c) => [String(c._id), c.name]))
 
+  // Their tier and any negotiated rates, read once for the whole list.
+  const contextOf = await pricingContextFor(reseller)
+
   const groups = new Map()
   for (const product of products) {
     const markupPercent = markupFor(reseller, product._id, markups)
-    // One pricing context per product, reused for every quantity.
-    const context = await resolvePricingContext(reseller, product)
+    const context = contextOf(product)
     const rows = []
 
     const quoted = product.pricingModel === 'QUOTE_ONLY' || product.purchaseMode === 'QUOTE_ONLY'

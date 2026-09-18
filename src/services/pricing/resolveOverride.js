@@ -41,16 +41,20 @@ function specificity(override, productId) {
  */
 export async function resolveOverrideFor(user, product) {
   if (!user || !product) return null
+  return pickOverride(await loadOverrideCandidates(user), user, product)
+}
 
+/** Every negotiated rate that could apply to this customer — read once. */
+export async function loadOverrideCandidates(user) {
+  if (!user) return []
   const scopeIds = [user._id]
   if (user.organization) scopeIds.push(user.organization)
+  return PriceOverride.find({ scopeId: { $in: scopeIds }, isActive: true }).lean()
+}
 
-  const candidates = await PriceOverride.find({
-    scopeId: { $in: scopeIds },
-    isActive: true,
-  }).lean()
-
-  if (!candidates.length) return null
+/** The one of those that applies to a product, or null. No database. */
+export function pickOverride(candidates, user, product) {
+  if (!candidates?.length || !user || !product) return null
 
   // Every category the product sits in, plus their ancestors — so a category
   // override on "Signage" reaches a product filed under "Outdoor Signage".
@@ -85,6 +89,17 @@ export async function resolveOverrideFor(user, product) {
  * rate (if any). Resolved server-side from the session — never from input.
  */
 export async function resolvePricingContext(user, product) {
+  return (await pricingContextFor(user))(product)
+}
+
+/**
+ * The same context, for MANY products: the organisation and the negotiated
+ * rates are read once and then applied in memory. A 300-product price list
+ * was otherwise 300 round trips to the database.
+ *
+ * @returns {Promise<(product: object) => {tierCode, organization, override}>}
+ */
+export async function pricingContextFor(user) {
   let tierCode = user?.resolvedTier ?? null
   let organization = null
 
@@ -98,8 +113,8 @@ export async function resolvePricingContext(user, product) {
     }
   }
 
-  const override = await resolveOverrideFor(user, product)
-  return { tierCode, organization, override }
+  const candidates = await loadOverrideCandidates(user)
+  return (product) => ({ tierCode, organization, override: pickOverride(candidates, user, product) })
 }
 
 /**

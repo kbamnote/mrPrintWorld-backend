@@ -24,9 +24,11 @@ const today = () => new Date().toLocaleDateString('en-IN', { day: 'numeric', mon
  */
 async function loadPhoto(url) {
   if (!url || !/^https:\/\//i.test(url)) return null
-  const source = url.replace(/\/image\/upload\/(?!.*\/image\/upload\/)/, '/image/upload/f_jpg,q_auto:eco,w_320,c_limit/')
+  // Small on purpose: the photo is printed at about 90pt, and a catalogue of
+  // several hundred products has to stay light enough to send on WhatsApp.
+  const source = url.replace(/\/image\/upload\/(?!.*\/image\/upload\/)/, '/image/upload/f_jpg,q_auto:eco,w_200,c_limit/')
   try {
-    const res = await fetch(source, { signal: AbortSignal.timeout(8000) })
+    const res = await fetch(source, { signal: AbortSignal.timeout(6000) })
     if (!res.ok) return null
     const type = res.headers.get('content-type') ?? ''
     if (!/image\/(jpeg|jpg|png)/i.test(type)) return null
@@ -37,12 +39,12 @@ async function loadPhoto(url) {
   }
 }
 
-/** Every photo in the catalogue, fetched a few at a time. */
+/** Every photo in the catalogue, fetched a dozen at a time. */
 async function loadPhotos(groups) {
   const urls = [...new Set(groups.flatMap((g) => g.items.map((i) => i.image)).filter(Boolean))]
   const photos = new Map()
-  for (let i = 0; i < urls.length; i += 6) {
-    const batch = urls.slice(i, i + 6)
+  for (let i = 0; i < urls.length; i += 12) {
+    const batch = urls.slice(i, i + 12)
     const loaded = await Promise.all(batch.map(loadPhoto))
     batch.forEach((url, n) => loaded[n] && photos.set(url, loaded[n]))
   }
