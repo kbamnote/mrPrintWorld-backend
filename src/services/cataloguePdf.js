@@ -14,7 +14,13 @@ const SOFT = '#5b6b62'
 const LINE = '#dfe5e1'
 const BRAND = '#0f5132'
 
-const money = (n) => `Rs. ${Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
+// Whole rupees where the price is whole, paise in full where it is not:
+// "Rs. 1,500" and "Rs. 5,142.50", never "Rs. 5,142.5".
+const money = (n) =>
+  `Rs. ${Number(n).toLocaleString('en-IN', {
+    minimumFractionDigits: Number.isInteger(Number(n)) ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`
 const today = () => new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
 
 /**

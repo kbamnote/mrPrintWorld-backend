@@ -27,6 +27,16 @@ const MAX_PACKS_SHOWN = 6
 const round = (n) => Math.round((n + Number.EPSILON) * 100) / 100
 const qty = (n) => Number(n).toLocaleString('en-IN')
 
+/**
+ * What a quantity is counted in. Many products carry a number here rather
+ * than a word (a rate typed into "Sold in"), which would print as "500 11" —
+ * so anything that is not a word is left off.
+ */
+const unitOf = (product) => {
+  const unit = String(product.pricing?.unit ?? '').trim()
+  return unit && !/^[\d.,]+$/.test(unit) ? unit : null
+}
+
 /** The reseller's selling price for a rate-based product (per sq.ft and the like). */
 function rateRow(product, reseller, markupPercent) {
   const cost = resolveDisplayPrice({ product, tierCode: reseller.resolvedTier ?? 'B2C' })
@@ -38,7 +48,7 @@ function rateRow(product, reseller, markupPercent) {
         ? Math.max(retail.from, cost.from)
         : null
       : round(cost.from * (1 + markupPercent / 100))
-  return price === null ? null : { label: `per ${cost.unit}`, price: round(Math.max(price, cost.from)) }
+  return price === null ? null : { label: `per ${unitOf(product) ?? 'sq.ft'}`, price: round(Math.max(price, cost.from)) }
 }
 
 /**
@@ -75,13 +85,15 @@ export async function buildCatalogue(reseller, storeUrl) {
         .map((s) => s.minQty)
         .sort((a, b) => a - b)
         .slice(0, MAX_PACKS_SHOWN)
+      const unit = unitOf(product)
       for (const quantity of quantities) {
         const sale = await priceForReferred({ reseller, product, markupPercent, context, input: { quantity } })
-        if (sale) rows.push({ label: `${qty(quantity)} ${product.pricing?.unit ?? 'pieces'}`, price: sale.priced.total })
+        if (sale) rows.push({ label: unit ? `${qty(quantity)} ${unit}` : qty(quantity), price: sale.priced.total })
       }
     } else if (!quoted && product.pricingModel === 'FIXED') {
       const sale = await priceForReferred({ reseller, product, markupPercent, context, input: { quantity: 1 } })
-      if (sale) rows.push({ label: `per ${product.pricing?.unit ?? 'unit'}`, price: sale.priced.total })
+      const unit = unitOf(product)
+      if (sale) rows.push({ label: unit ? `per ${unit}` : 'each', price: sale.priced.total })
     } else if (!quoted) {
       const row = rateRow(product, reseller, markupPercent)
       if (row) rows.push(row)
