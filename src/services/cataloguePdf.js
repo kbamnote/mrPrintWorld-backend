@@ -91,9 +91,9 @@ export async function renderCataloguePdf(catalogue) {
 
   const GAP = 14
   const CARD_W = (W - GAP) / 2
-  const CARD_H = 100
+  const CARD_H = 112
   const PAD = 10
-  const PHOTO = CARD_H - PAD * 2
+  const PHOTO = 84 // smaller than the card, so the name and specs get the width
 
   /**
    * The paper texture, laid before anything else on every page — one small
@@ -137,14 +137,39 @@ export async function renderCataloguePdf(catalogue) {
     .text('Product catalogue & price list', { width: W - qrBox - 30 })
   doc.fontSize(10).text(today(), { width: W - qrBox - 30 })
 
-  let y = 262
+  // A glimpse of the work, so the first page is not all text.
+  const covers = []
+  for (const group of groups) {
+    const item = group.items.find((i) => i.image && photos.get(i.image))
+    if (item) covers.push(photos.get(item.image))
+    if (covers.length === 3) break
+  }
+  let y = 352
+  if (covers.length === 3) {
+    const stripW = (W - 20) / 3
+    covers.forEach((photo, i) => {
+      const px = MARGIN + i * (stripW + 10)
+      doc.save()
+      doc.roundedRect(px, 246, stripW, 88, 8).clip()
+      try {
+        doc.image(photo, px, 246, { cover: [stripW, 88], align: 'center', valign: 'center' })
+      } catch {
+        /* a photo PDFKit cannot place leaves the space empty */
+      }
+      doc.restore()
+      doc.roundedRect(px, 246, stripW, 88, 8).lineWidth(0.5).stroke(LINE)
+    })
+  } else {
+    y = 262
+  }
+
   doc.fillColor(INK).font('Helvetica-Bold').fontSize(11).text('Order online', MARGIN, y)
   doc.font('Helvetica').fontSize(10).fillColor(BRAND).text(store.url, MARGIN, doc.y + 2, { link: store.url, width: W * 0.55 })
   if (store.phone) doc.fillColor(SOFT).text(`WhatsApp / call ${store.phone}`, MARGIN, doc.y + 2)
   doc
     .fillColor(SOFT)
     .fontSize(9.5)
-    .text('Scan the code above, or open the link, to see every product and place an order.', MARGIN, doc.y + 6, {
+    .text('Tap any product in this catalogue to open it on our website, or scan the code above.', MARGIN, doc.y + 6, {
       width: W * 0.55,
     })
 
@@ -153,7 +178,7 @@ export async function renderCataloguePdf(catalogue) {
   const listW = W * 0.4
   doc.fillColor(INK).font('Helvetica-Bold').fontSize(11).text('Inside this catalogue', listX, y, { width: listW })
   let listY = doc.y + 6
-  for (const group of groups.slice(0, 14)) {
+  for (const group of groups.slice(0, 10)) {
     doc.font('Helvetica').fontSize(9).fillColor(SOFT).text(group.name, listX, listY, {
       width: listW - 42,
       height: 11,
@@ -162,8 +187,8 @@ export async function renderCataloguePdf(catalogue) {
     doc.fillColor(INK).text(String(group.items.length), listX + listW - 40, listY, { width: 40, align: 'right' })
     listY += 13
   }
-  if (groups.length > 14) {
-    doc.font('Helvetica-Oblique').fontSize(9).fillColor(SOFT).text(`+ ${groups.length - 14} more categories`, listX, listY, { width: listW })
+  if (groups.length > 10) {
+    doc.font('Helvetica-Oblique').fontSize(9).fillColor(SOFT).text(`+ ${groups.length - 10} more categories`, listX, listY, { width: listW })
   }
 
   // How to order, so a customer who has only been sent the file knows what to do.
@@ -232,37 +257,48 @@ export async function renderCataloguePdf(catalogue) {
     doc.roundedRect(x, y, CARD_W, CARD_H, 8).fillAndStroke('#ffffff', LINE)
 
     const photo = item.image ? photos.get(item.image) : null
+    const photoY = y + (CARD_H - PHOTO) / 2
     if (photo) {
       try {
         doc.save()
-        doc.roundedRect(x + PAD, y + PAD, PHOTO, PHOTO, 6).clip()
-        doc.image(photo, x + PAD, y + PAD, { cover: [PHOTO, PHOTO], align: 'center', valign: 'center' })
+        doc.roundedRect(x + PAD, photoY, PHOTO, PHOTO, 6).clip()
+        doc.image(photo, x + PAD, photoY, { cover: [PHOTO, PHOTO], align: 'center', valign: 'center' })
         doc.restore()
       } catch {
         doc.restore() // an image PDFKit cannot place leaves the space empty
       }
-      doc.roundedRect(x + PAD, y + PAD, PHOTO, PHOTO, 6).lineWidth(0.5).stroke(LINE)
+      doc.roundedRect(x + PAD, photoY, PHOTO, PHOTO, 6).lineWidth(0.5).stroke(LINE)
     } else {
-      doc.roundedRect(x + PAD, y + PAD, PHOTO, PHOTO, 6).fill(PAPER)
+      doc.roundedRect(x + PAD, photoY, PHOTO, PHOTO, 6).fill(PAPER)
     }
 
     const textX = x + PAD * 2 + PHOTO
     const textW = CARD_W - (textX - x) - PAD
-    doc.fillColor(INK).font('Helvetica-Bold').fontSize(9.5).text(item.name, textX, y + PAD + 1, {
+    // Named in brand colour because the whole card opens the product online.
+    doc.fillColor(BRAND).font('Helvetica-Bold').fontSize(9.5).text(item.name, textX, y + PAD, {
       width: textW,
       height: 23,
       ellipsis: true,
       lineGap: 1,
     })
+    if (item.specs) {
+      doc.fillColor(SOFT).font('Helvetica').fontSize(7.5).text(item.specs, textX, y + PAD + 24, {
+        width: textW,
+        height: 19,
+        ellipsis: true,
+        lineGap: 1,
+      })
+    }
+    if (item.link) doc.link(x, y, CARD_W, CARD_H, item.link)
 
-    let rowY = y + PAD + 26
+    let rowY = y + PAD + 46
     if (item.quoteOnly) {
       doc.roundedRect(textX, rowY, 84, 15, 7).fill(PAPER)
       doc.fillColor(SOFT).font('Helvetica').fontSize(8).text('Price on request', textX, rowY + 4, { width: 84, align: 'center' })
       return
     }
 
-    const rows = item.rows.slice(0, 4)
+    const rows = item.rows.slice(0, 3)
     rows.forEach((row, i) => {
       if (i > 0) {
         doc.moveTo(textX, rowY - 2).lineTo(textX + textW, rowY - 2).lineWidth(0.4).stroke(LINE)

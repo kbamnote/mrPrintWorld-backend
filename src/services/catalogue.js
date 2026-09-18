@@ -51,14 +51,32 @@ function rateRow(product, reseller, markupPercent) {
   return price === null ? null : { label: `per ${unitOf(product) ?? 'sq.ft'}`, price: round(Math.max(price, cost.from)) }
 }
 
+/** A short line of what the product is, from whatever detail it carries. */
+function specLine(product) {
+  const bits = [...(product.specifications ?? []), ...(product.materials ?? []), ...(product.sizes ?? [])]
+    .map((s) => String(s).trim())
+    .filter(Boolean)
+  const line = bits.length ? bits.slice(0, 3).join(' · ') : String(product.shortDescription ?? '').trim()
+  if (!line) return null
+  return line.length > 95 ? `${line.slice(0, 94)}…` : line
+}
+
 /**
  * @param {object} reseller  the signed-in reseller (lean user)
  * @param {string} storeUrl  their store link, printed and turned into a QR code
  */
 export async function buildCatalogue(reseller, storeUrl) {
+  // Their store's product pages, so a customer who opens one from the PDF
+  // still sees the reseller's prices and stays their customer.
+  const site = storeUrl.replace(/\/store\/[^/]*$/, '')
+  const code = reseller.reseller?.code ?? null
+  const linkTo = (slug) => (code ? `${site}/store/${code}/products/${slug}` : `${site}/products/${slug}`)
+
   // Only what a retail customer of theirs could actually buy.
   const products = await Product.find({ isActive: true, 'visibility.b2c': true })
-    .select('name slug images legacyImageUrl pricingModel purchaseMode pricing primaryCategory shortDescription')
+    .select(
+      'name slug images legacyImageUrl pricingModel purchaseMode pricing primaryCategory shortDescription specifications materials sizes',
+    )
     .sort({ name: 1 })
     .limit(MAX_PRODUCTS)
     .lean()
@@ -103,7 +121,8 @@ export async function buildCatalogue(reseller, storeUrl) {
     if (!groups.has(group)) groups.set(group, [])
     groups.get(group).push({
       name: product.name,
-      note: product.shortDescription ?? null,
+      link: linkTo(product.slug),
+      specs: specLine(product),
       image: product.images?.find((i) => i.isPrimary)?.url ?? product.images?.[0]?.url ?? product.legacyImageUrl ?? null,
       rows,
       quoteOnly: rows.length === 0,
@@ -113,7 +132,7 @@ export async function buildCatalogue(reseller, storeUrl) {
   const catalogue = {
     store: {
       name: storeNameOf(reseller) ?? 'Our store',
-      code: reseller.reseller?.code ?? null,
+      code,
       phone: reseller.phone ?? null,
       url: storeUrl,
     },

@@ -48,6 +48,8 @@ const cards = await Product.create({
   primaryCategory: cat._id,
   pricingModel: 'SLAB',
   purchaseMode: 'BUY_NOW',
+  specifications: ['350 GSM', 'Matt lamination'],
+  sizes: ['3.5 x 2 in'],
   pricing: {
     unit: 'pieces',
     slabs: [
@@ -130,6 +132,14 @@ await test('the price list is the reseller\'s own price, from their markup', asy
   assert.equal(only(built, banner.name).rows[0].price, 44, '40 per sq.ft + 10%')
   assert.equal(built.store.name, reseller.reseller.storeName)
   assert.equal(built.store.url, storeUrl)
+})
+
+await test('every product links to itself inside the reseller\'s store, with its details', async () => {
+  const data = await buildCatalogue(reseller.toObject(), storeUrl)
+  const item = only(data, cards.name)
+  assert.equal(item.link, `https://www.mrprintworld.com/store/${reseller.reseller.code}/products/${cards.slug}`)
+  assert.equal(item.specs, '350 GSM · Matt lamination · 3.5 x 2 in')
+  assert.equal(only(data, banner.name).specs, null, 'a product with no details has no spec line')
 })
 
 await test('a per-product markup wins, and quote-only products say so', async () => {
